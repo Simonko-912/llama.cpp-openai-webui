@@ -14,6 +14,8 @@
 	} from '$lib/stores/models.svelte';
 	import { KeyboardKey } from '$lib/enums';
 	import { isRouterMode } from '$lib/stores/server.svelte';
+	import { isRemoteOpenAiApi } from '$lib/utils';
+	import { customModelsDialogStore } from '$lib/stores/custom-models-dialog.svelte';
 	import {
 		DialogModelInformation,
 		DropdownMenuSearchable,
@@ -52,11 +54,13 @@
 	let loading = $derived(modelsLoading());
 	let updating = $derived(modelsUpdating());
 	let activeId = $derived(selectedModelId());
-	let isRouter = $derived(isRouterMode());
+	let isRemoteOpenAi = $derived(isRemoteOpenAiApi());
+	let useModelListPicker = $derived(isRouterMode() || isRemoteOpenAi);
+	let canLoadUnloadModels = $derived(isRouterMode() && !isRemoteOpenAi);
 	let serverModel = $derived(singleModelName());
 
 	let isHighlightedCurrentModelActive = $derived.by(() => {
-		if (!isRouter || !currentModel) return false;
+		if (!useModelListPicker || !currentModel) return false;
 
 		const currentOption = options.find((option) => option.model === currentModel);
 
@@ -64,7 +68,7 @@
 	});
 
 	let isCurrentModelInCache = $derived.by(() => {
-		if (!isRouter || !currentModel) return true;
+		if (!useModelListPicker || !currentModel) return true;
 
 		return options.some((option) => option.model === currentModel);
 	});
@@ -105,15 +109,19 @@
 	function handleOpenChange(open: boolean) {
 		if (loading || updating) return;
 
-		if (isRouter) {
+		if (useModelListPicker) {
 			if (open) {
 				isOpen = true;
 				searchTerm = '';
 				highlightedIndex = -1;
 
-				modelsStore.fetchRouterModels().then(() => {
-					modelsStore.fetchModalitiesForLoadedModels();
-				});
+				if (canLoadUnloadModels) {
+					modelsStore.fetchRouterModels().then(() => {
+						modelsStore.fetchModalitiesForLoadedModels();
+					});
+				} else {
+					modelsStore.fetch(true).catch((err) => console.warn('Failed to refresh models', err));
+				}
 			} else {
 				isOpen = false;
 				searchTerm = '';
@@ -191,7 +199,7 @@
 			});
 		}
 
-		if (!onModelChange && isRouter && !modelsStore.isModelLoaded(option.model)) {
+		if (!onModelChange && canLoadUnloadModels && !modelsStore.isModelLoaded(option.model)) {
 			isLoadingModel = true;
 			modelsStore
 				.loadModel(option.model)
@@ -201,7 +209,7 @@
 	}
 
 	function getDisplayOption(): ModelOption | undefined {
-		if (!isRouter) {
+		if (!useModelListPicker) {
 			const displayModel = serverModel || currentModel;
 			if (displayModel) {
 				return {
@@ -243,32 +251,44 @@
 </script>
 
 <div class={cn('relative inline-flex flex-col items-end gap-1', className)}>
-	{#if loading && options.length === 0 && isRouter}
+	{#if loading && options.length === 0 && useModelListPicker}
 		<div class="flex items-center gap-2 text-xs text-muted-foreground">
 			<Loader2 class="h-3.5 w-3.5 animate-spin" />
 
 			Loading models…
 		</div>
-	{:else if options.length === 0 && isRouter}
-		{#if currentModel}
-			<span
-				class={cn(
-					'inline-flex items-center gap-1.5 rounded-sm bg-muted-foreground/10 px-1.5 py-1 text-xs text-muted-foreground',
-					className
-				)}
-				style="max-width: min(calc(100cqw - 9rem), 20rem)"
-			>
-				<Package class="h-3.5 w-3.5" />
+	{:else if options.length === 0 && useModelListPicker}
+		<div class="flex max-w-[16rem] flex-col items-end gap-1 text-right">
+			{#if currentModel}
+				<span
+					class={cn(
+						'inline-flex items-center gap-1.5 rounded-sm bg-muted-foreground/10 px-1.5 py-1 text-xs text-muted-foreground',
+						className
+					)}
+					style="max-width: min(calc(100cqw - 9rem), 20rem)"
+				>
+					<Package class="h-3.5 w-3.5" />
 
-				<ModelId modelId={currentModel} class="min-w-0" showOrgName />
-			</span>
-		{:else}
-			<p class="text-xs text-muted-foreground">No models available.</p>
-		{/if}
+					<ModelId modelId={currentModel} class="min-w-0" showOrgName />
+				</span>
+
+				<p class="text-xs text-muted-foreground">Model not in current list.</p>
+			{:else}
+				<p class="text-xs text-muted-foreground">No models available.</p>
+			{/if}
+
+			<button
+				type="button"
+				class="text-xs font-medium text-primary underline-offset-2 hover:underline"
+				onclick={() => customModelsDialogStore.open()}
+			>
+				Manage API servers…
+			</button>
+		</div>
 	{:else}
 		{@const selectedOption = getDisplayOption()}
 
-		{#if isRouter}
+		{#if useModelListPicker}
 			<DropdownMenu.Root bind:open={isOpen} onOpenChange={handleOpenChange}>
 				<DropdownMenu.Trigger
 					class={cn(

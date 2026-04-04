@@ -1,4 +1,5 @@
 import type { ApiModelDataEntry, ApiModelDetails } from '$lib/types/api';
+import type { OpenAiConnectionContext } from '$lib/utils/api-target';
 
 export interface ModelModalities {
 	vision: boolean;
@@ -9,6 +10,8 @@ export interface ModelOption {
 	id: string;
 	name: string;
 	model: string;
+	/** When set, chat/completions and auth for this row use this OpenAI-compatible server. */
+	openAiConnection?: OpenAiConnectionContext;
 	description?: string;
 	capabilities: string[];
 	modalities?: ModelModalities;

@@ -7,7 +7,8 @@
 	import {
 		ChatSidebar,
 		DialogConversationTitleUpdate,
-		DialogChatSettings
+		DialogChatSettings,
+		DialogManageCustomModels
 	} from '$lib/components/app';
 	import { isLoading } from '$lib/stores/chat.svelte';
 	import { conversationsStore, activeMessages } from '$lib/stores/conversations.svelte';
@@ -21,6 +22,7 @@
 	import { modelsStore } from '$lib/stores/models.svelte';
 	import { mcpStore } from '$lib/stores/mcp.svelte';
 	import { TOOLTIP_DELAY_DURATION } from '$lib/constants';
+	import { isRemoteOpenAiApi } from '$lib/utils';
 	import type { SettingsSectionTitle } from '$lib/constants';
 	import { KeyboardKey } from '$lib/enums';
 	import { IsMobile } from '$lib/hooks/is-mobile.svelte';
@@ -152,7 +154,7 @@
 		const modelsCount = modelsStore.models.length;
 
 		// Only fetch router models once when we have models loaded and in router mode
-		if (isRouter && modelsCount > 0 && !routerModelsFetched) {
+		if (isRouter && !isRemoteOpenAiApi() && modelsCount > 0 && !routerModelsFetched) {
 			routerModelsFetched = true;
 			untrack(() => {
 				modelsStore.fetchRouterModels();
@@ -234,6 +236,8 @@
 		onOpenChange={(open) => (chatSettingsDialogOpen = open)}
 		initialSection={chatSettingsDialogInitialSection}
 	/>
+
+	<DialogManageCustomModels />
 
 	<DialogConversationTitleUpdate
 		bind:open={titleUpdateDialogOpen}

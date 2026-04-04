@@ -2,8 +2,19 @@ import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { toast } from 'svelte-sonner';
 import { ServerModelStatus, ModelModality } from '$lib/enums';
 import { ModelsService, PropsService } from '$lib/services';
+import { config } from '$lib/stores/settings.svelte';
 import { serverStore } from '$lib/stores/server.svelte';
-import { TTLCache } from '$lib/utils';
+import { TTLCache, parseOpenAiManagedModelsFromConfig } from '$lib/utils';
+import {
+	buildGlobalOpenAiConnectionFromConfig,
+	getSameOriginOpenAiRoot,
+	openAiRootsEffectivelyEqual,
+	openAiConnectionFetchKey,
+	resolveOpenAiConnectionForProfile,
+	parseOpenAiServerProfilesFromConfig,
+	type OpenAiConnectionContext
+} from '$lib/utils/api-target';
+import type { OpenAiManagedModelEntry } from '$lib/utils/api-target';
 import {
 	MODEL_PROPS_CACHE_TTL_MS,
 	MODEL_PROPS_CACHE_MAX_ENTRIES,
@@ -217,7 +228,18 @@ class ModelsStore {
 	 *
 	 */
 
+	private isExternallyHostedModelId(modelId: string): boolean {
+		const opt =
+			this.models.find((m) => m.model === modelId) ?? this.models.find((m) => m.id === modelId);
+		if (opt?.openAiConnection) {
+			return !openAiRootsEffectivelyEqual(opt.openAiConnection.baseUrl, getSameOriginOpenAiRoot());
+		}
+		return Boolean(config().openAiApiBaseUrl?.toString().trim());
+	}
+
 	isModelLoaded(modelId: string): boolean {
+		if (this.isExternallyHostedModelId(modelId)) return true;
+
 		const model = this.routerModels.find((m) => m.id === modelId);
 		return (
 			model?.status.value === ServerModelStatus.LOADED ||
@@ -227,10 +249,14 @@ class ModelsStore {
 	}
 
 	isModelOperationInProgress(modelId: string): boolean {
+		if (this.isExternallyHostedModelId(modelId)) return false;
+
 		return this.modelLoadingStates.get(modelId) ?? false;
 	}
 
 	getModelStatus(modelId: string): ServerModelStatus | null {
+		if (this.isExternallyHostedModelId(modelId)) return ServerModelStatus.LOADED;
+
 		const model = this.routerModels.find((m) => m.id === modelId);
 		return model?.status.value ?? null;
 	}
@@ -268,29 +294,79 @@ class ModelsStore {
 				await serverStore.fetch();
 			}
 
-			const response = await ModelsService.list();
+			const cfgRecord = config() as Record<string, unknown>;
+			const profiles = parseOpenAiServerProfilesFromConfig(cfgRecord);
+			const sameOriginCtx: OpenAiConnectionContext = {
+				baseUrl: getSameOriginOpenAiRoot(),
+				apiKey: config().apiKey?.toString().trim() || undefined,
+				useCorsProxy: Boolean(config().openAiApiUseCorsProxy)
+			};
 
-			const models: ModelOption[] = response.data.map((item: ApiModelDataEntry, index: number) => {
-				const details = response.models?.[index];
-				const rawCapabilities = Array.isArray(details?.capabilities) ? details?.capabilities : [];
-				const displayNameSource =
-					details?.name && details.name.trim().length > 0 ? details.name : item.id;
-				const displayName = this.toDisplayName(displayNameSource);
-				const modelId = details?.model || item.id;
+			const models: ModelOption[] = [];
+			const seen = new Set<string>();
+			const fetchedConn = new Set<string>();
 
-				return {
-					id: item.id,
-					name: displayName,
-					model: modelId,
-					description: details?.description,
-					capabilities: rawCapabilities.filter((value: unknown): value is string => Boolean(value)),
-					details: details?.details,
-					meta: item.meta ?? null,
-					parsedId: ModelsService.parseModelId(modelId),
-					aliases: item.aliases ?? [],
-					tags: item.tags ?? []
-				} satisfies ModelOption;
-			});
+			try {
+				const so = await ModelsService.listOpenAi('same-origin');
+				fetchedConn.add(openAiConnectionFetchKey(sameOriginCtx));
+				this.mergeModelOptionsSeen(
+					models,
+					seen,
+					this.mapOpenAiListToOptions(so, sameOriginCtx, '')
+				);
+			} catch {
+				// same-origin list unavailable (e.g. strict CORS) — continue with remotes / manual models
+			}
+
+			const globalCtx = buildGlobalOpenAiConnectionFromConfig();
+			if (globalCtx) {
+				const gk = openAiConnectionFetchKey(globalCtx);
+				if (!fetchedConn.has(gk)) {
+					fetchedConn.add(gk);
+					try {
+						const gr = await ModelsService.listOpenAi(globalCtx);
+						this.mergeModelOptionsSeen(
+							models,
+							seen,
+							this.mapOpenAiListToOptions(gr, globalCtx, 'g')
+						);
+					} catch {
+						// ignore
+					}
+				}
+			}
+
+			for (let pi = 0; pi < profiles.length; pi++) {
+				const profile = profiles[pi];
+				const ctx = resolveOpenAiConnectionForProfile(profile, cfgRecord);
+				const prefix = `p${pi}`;
+				const ck = openAiConnectionFetchKey(ctx);
+
+				const sameAsAppLlama = openAiRootsEffectivelyEqual(ctx.baseUrl, sameOriginCtx.baseUrl);
+				if (sameAsAppLlama && ck === openAiConnectionFetchKey(sameOriginCtx)) {
+					for (const entry of profile.models ?? []) {
+						this.pushManualModel(models, seen, ctx, prefix, entry);
+					}
+					continue;
+				}
+
+				if (!fetchedConn.has(ck)) {
+					fetchedConn.add(ck);
+					try {
+						const pr = await ModelsService.listOpenAi(ctx);
+						this.mergeModelOptionsSeen(
+							models,
+							seen,
+							this.mapOpenAiListToOptions(pr, ctx, prefix)
+						);
+					} catch {
+						// ignore
+					}
+				}
+				for (const entry of profile.models ?? []) {
+					this.pushManualModel(models, seen, ctx, prefix, entry);
+				}
+			}
 
 			this.models = models;
 
@@ -308,9 +384,27 @@ class ModelsStore {
 				);
 			}
 		} catch (error) {
-			this.models = [];
-			this.error = error instanceof Error ? error.message : 'Failed to load models';
-			throw error;
+			const cfgRecord = config() as Record<string, unknown>;
+			const customEntries = parseOpenAiManagedModelsFromConfig(cfgRecord);
+			const globalCtxFb = buildGlobalOpenAiConnectionFromConfig();
+			const conn: OpenAiConnectionContext =
+				globalCtxFb ??
+				({
+					baseUrl: getSameOriginOpenAiRoot(),
+					apiKey: config().apiKey?.toString().trim() || undefined,
+					useCorsProxy: Boolean(config().openAiApiUseCorsProxy)
+				} satisfies OpenAiConnectionContext);
+			const fallback: ModelOption[] = [];
+			const seenFb = new Set<string>();
+			for (const entry of customEntries) {
+				this.pushManualModel(fallback, seenFb, conn, '', entry);
+			}
+			this.models = fallback;
+			this.error =
+				fallback.length > 0 ? null : error instanceof Error ? error.message : 'Failed to load models';
+			if (fallback.length === 0) {
+				throw error;
+			}
 		} finally {
 			this.loading = false;
 		}
@@ -482,6 +576,11 @@ class ModelsStore {
 
 	findModelByName(modelName: string): ModelOption | null {
 		return this.models.find((model) => model.model === modelName) ?? null;
+	}
+
+	/** Connection used for chat/completions when the request uses this model id. */
+	getOpenAiConnectionForModel(modelName: string): OpenAiConnectionContext | undefined {
+		return this.findModelByName(modelName)?.openAiConnection;
 	}
 
 	findModelById(modelId: string): ModelOption | null {
@@ -681,6 +780,74 @@ class ModelsStore {
 		const candidate = segments.pop();
 
 		return candidate && candidate.trim().length > 0 ? candidate : id;
+	}
+
+	private mapOpenAiListToOptions(
+		response: ApiModelListResponse,
+		ctx: OpenAiConnectionContext,
+		idPrefix: string
+	): ModelOption[] {
+		return response.data.map((item: ApiModelDataEntry, index: number) => {
+			const details = response.models?.[index];
+			const rawCapabilities = Array.isArray(details?.capabilities) ? details?.capabilities : [];
+			const displayNameSource =
+				details?.name && details.name.trim().length > 0 ? details.name : item.id;
+			const displayName = this.toDisplayName(displayNameSource);
+			const modelId = details?.model || item.id;
+			const id = idPrefix ? `${idPrefix}:${item.id}` : item.id;
+
+			return {
+				id,
+				name: displayName,
+				model: modelId,
+				description: details?.description,
+				capabilities: rawCapabilities.filter((value: unknown): value is string => Boolean(value)),
+				details: details?.details,
+				meta: item.meta ?? null,
+				parsedId: ModelsService.parseModelId(modelId),
+				aliases: item.aliases ?? [],
+				tags: item.tags ?? [],
+				openAiConnection: ctx
+			} satisfies ModelOption;
+		});
+	}
+
+	private mergeModelOptionsSeen(
+		models: ModelOption[],
+		seen: Set<string>,
+		next: ModelOption[]
+	): void {
+		for (const o of next) {
+			if (!o.openAiConnection) continue;
+			const k = `${openAiConnectionFetchKey(o.openAiConnection)}|${o.model}`;
+			if (seen.has(k)) continue;
+			seen.add(k);
+			models.push(o);
+		}
+	}
+
+	private pushManualModel(
+		models: ModelOption[],
+		seen: Set<string>,
+		ctx: OpenAiConnectionContext,
+		prefix: string,
+		entry: OpenAiManagedModelEntry
+	): void {
+		const mid = entry.id.trim();
+		if (!mid) return;
+		const k = `${openAiConnectionFetchKey(ctx)}|${mid}`;
+		if (seen.has(k)) return;
+		seen.add(k);
+		models.push({
+			id: prefix ? `${prefix}:${mid}` : mid,
+			name: entry.label?.trim() ? entry.label.trim() : this.toDisplayName(mid),
+			model: mid,
+			capabilities: [],
+			parsedId: ModelsService.parseModelId(mid),
+			aliases: [],
+			tags: [],
+			openAiConnection: ctx
+		});
 	}
 
 	clear(): void {

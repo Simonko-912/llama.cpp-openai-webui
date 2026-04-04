@@ -20,3 +20,18 @@ export function getJsonHeaders(): Record<string, string> {
 		...getAuthHeaders()
 	};
 }
+
+/**
+ * JSON headers with Bearer token: explicit key wins, else global Settings API key.
+ */
+export function getJsonHeadersWithOpenAiKey(apiKeyOverride?: string): Record<string, string> {
+	const currentConfig = config();
+	const fromOverride = apiKeyOverride?.toString().trim();
+	const fromGlobal = currentConfig.apiKey?.toString().trim();
+	const token = fromOverride || fromGlobal;
+
+	return {
+		'Content-Type': 'application/json',
+		...(token ? { Authorization: `Bearer ${token}` } : {})
+	};
+}

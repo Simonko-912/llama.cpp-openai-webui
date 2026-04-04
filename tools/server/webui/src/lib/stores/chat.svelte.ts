@@ -30,7 +30,8 @@ import {
 	findDescendantMessages,
 	findLeafNode,
 	findMessageById,
-	isAbortError
+	isAbortError,
+	isRemoteOpenAiApi
 } from '$lib/utils';
 import {
 	MAX_INACTIVE_CONVERSATION_STATES,
@@ -538,12 +539,12 @@ class ChatStore {
 	): Promise<void> {
 		let effectiveModel = modelOverride;
 
-		if (isRouterMode() && !effectiveModel) {
+		if ((isRouterMode() || isRemoteOpenAiApi()) && !effectiveModel) {
 			const conversationModel = this.getConversationModel(allMessages);
 			effectiveModel = selectedModelName() || conversationModel;
 		}
 
-		if (isRouterMode() && effectiveModel) {
+		if ((isRouterMode() || isRemoteOpenAiApi()) && effectiveModel) {
 			if (!modelsStore.getModelProps(effectiveModel))
 				await modelsStore.fetchModelProps(effectiveModel);
 		}
@@ -723,7 +724,8 @@ class ChatStore {
 				cleanupStreamingState();
 
 				if (onComplete) onComplete(streamedContent);
-				if (isRouterMode()) modelsStore.fetchRouterModels().catch(console.error);
+				if (isRouterMode() && !isRemoteOpenAiApi())
+					modelsStore.fetchRouterModels().catch(console.error);
 			},
 			onError: (error: Error) => {
 				this.setStreamingActive(false);
@@ -804,7 +806,8 @@ class ChatStore {
 					await conversationsStore.updateCurrentNode(currentMessageId);
 					cleanupStreamingState();
 					if (onComplete) await onComplete(content);
-					if (isRouterMode()) modelsStore.fetchRouterModels().catch(console.error);
+					if (isRouterMode() && !isRemoteOpenAiApi())
+						modelsStore.fetchRouterModels().catch(console.error);
 				},
 				onError: streamCallbacks.onError
 			},
@@ -1430,7 +1433,7 @@ class ChatStore {
 		if (activeState && typeof activeState.contextTotal === 'number' && activeState.contextTotal > 0)
 			return activeState.contextTotal;
 
-		if (isRouterMode()) {
+		if (isRouterMode() || isRemoteOpenAiApi()) {
 			const modelContextSize = selectedModelContextSize();
 
 			if (typeof modelContextSize === 'number' && modelContextSize > 0) {
@@ -1548,7 +1551,7 @@ class ChatStore {
 			value !== undefined && value !== null && value !== '';
 		const apiOptions: Record<string, unknown> = { stream: true, timings_per_token: true };
 
-		if (isRouterMode()) {
+		if (isRouterMode() || isRemoteOpenAiApi()) {
 			const modelName = selectedModelName();
 			if (modelName) apiOptions.model = modelName;
 		}

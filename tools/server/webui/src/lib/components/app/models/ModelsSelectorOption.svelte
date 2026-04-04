@@ -14,6 +14,7 @@
 	import type { ModelOption } from '$lib/types/models';
 	import { ServerModelStatus } from '$lib/enums';
 	import { modelsStore, routerModels } from '$lib/stores/models.svelte';
+	import { isRemoteOpenAiApi } from '$lib/utils';
 
 	interface Props {
 		option: ModelOption;
@@ -39,6 +40,7 @@
 		onInfoClick
 	}: Props = $props();
 
+	let isRemoteOpenAi = $derived(isRemoteOpenAiApi());
 	let currentRouterModels = $derived(routerModels());
 	let serverStatus = $derived.by(() => {
 		const model = currentRouterModels.find((m) => m.id === option.model);
@@ -103,7 +105,7 @@
 			{/if}
 
 			<!-- info button: only shown when model is loaded and callback is provided -->
-			{#if isLoaded && onInfoClick}
+			{#if isLoaded && onInfoClick && !isRemoteOpenAi}
 				<ActionIcon
 					iconSize="h-2.5 w-2.5"
 					icon={Info}
@@ -114,7 +116,9 @@
 			{/if}
 		</div>
 
-		{#if isLoading}
+		{#if isRemoteOpenAi}
+			<div class="w-4 shrink-0" aria-hidden="true"></div>
+		{:else if isLoading}
 			<Loader2 class="h-4 w-4 animate-spin text-muted-foreground" />
 		{:else if isFailed}
 			<div class="flex w-4 items-center justify-center">

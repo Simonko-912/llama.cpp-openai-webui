@@ -1,6 +1,13 @@
 import { base } from '$app/paths';
-import { getJsonHeaders, getAuthHeaders } from './api-headers';
+import { getJsonHeaders, getAuthHeaders, getJsonHeadersWithOpenAiKey } from './api-headers';
 import { UrlProtocol } from '$lib/enums';
+import {
+	prepareOpenAiFetch,
+	prepareOpenAiFetchSameOrigin,
+	prepareOpenAiFetchWithContext,
+	openAiPathFromApiFetchPath,
+	type OpenAiConnectionContext
+} from './api-target';
 
 /**
  * API Fetch Utilities
@@ -21,6 +28,10 @@ export interface ApiFetchOptions extends Omit<RequestInit, 'headers'> {
 	 * Additional headers to merge with default headers.
 	 */
 	headers?: Record<string, string>;
+	/**
+	 * For `/v1/*` paths: target OpenAI-compatible server (default uses global base URL or same host).
+	 */
+	openAiConnection?: OpenAiConnectionContext | 'same-origin';
 }
 
 /**
@@ -43,20 +54,47 @@ export interface ApiFetchOptions extends Omit<RequestInit, 'headers'> {
  * });
  * ```
  */
-export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
-	const { authOnly = false, headers: customHeaders, ...fetchOptions } = options;
+function isOpenAiCompatibleFetchPath(path: string): boolean {
+	if (path.startsWith(UrlProtocol.HTTP) || path.startsWith(UrlProtocol.HTTPS)) {
+		return false;
+	}
+	const p = path.startsWith('/') ? path : `/${path}`;
+	return p === '/v1/models' || p.startsWith('/v1/');
+}
 
-	const baseHeaders = authOnly ? getAuthHeaders() : getJsonHeaders();
+export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
+	const { authOnly = false, headers: customHeaders, openAiConnection, ...fetchOptions } = options;
+
+	let baseHeaders = authOnly ? getAuthHeaders() : getJsonHeaders();
+	if (openAiConnection && typeof openAiConnection === 'object' && !authOnly) {
+		baseHeaders = getJsonHeadersWithOpenAiKey(openAiConnection.apiKey);
+	}
 	const headers = { ...baseHeaders, ...customHeaders };
 
-	const url =
-		path.startsWith(UrlProtocol.HTTP) || path.startsWith(UrlProtocol.HTTPS)
-			? path
-			: `${base}${path}`;
+	let url: string;
+	let finalHeaders = headers;
+
+	if (path.startsWith(UrlProtocol.HTTP) || path.startsWith(UrlProtocol.HTTPS)) {
+		url = path;
+	} else if (isOpenAiCompatibleFetchPath(path)) {
+		const subpath = openAiPathFromApiFetchPath(path);
+		let prepared;
+		if (openAiConnection === 'same-origin') {
+			prepared = prepareOpenAiFetchSameOrigin(subpath, headers);
+		} else if (openAiConnection && typeof openAiConnection === 'object') {
+			prepared = prepareOpenAiFetchWithContext(subpath, headers, openAiConnection);
+		} else {
+			prepared = prepareOpenAiFetch(subpath, headers);
+		}
+		url = prepared.url;
+		finalHeaders = prepared.headers;
+	} else {
+		url = `${base}${path}`;
+	}
 
 	const response = await fetch(url, {
 		...fetchOptions,
-		headers
+		headers: finalHeaders
 	});
 
 	if (!response.ok) {

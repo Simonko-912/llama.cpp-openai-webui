@@ -5,6 +5,11 @@ export const SETTING_CONFIG_DEFAULT: Record<string, string | number | boolean | 
 	// Note: in order not to introduce breaking changes, please keep the same data type (number, string, etc) if you want to change the default value.
 	// Do not use nested objects, keep it single level. Prefix the key if you need to group them.
 	apiKey: '',
+	openAiApiBaseUrl: '',
+	openAiApiUseCorsProxy: false,
+	openAiCustomModels: '',
+	openAiManagedModels: '[]',
+	openAiServerProfiles: '[]',
 	systemMessage: '',
 	showSystemMessage: true,
 	theme: ColorMode.SYSTEM,
@@ -62,7 +67,18 @@ export const SETTING_CONFIG_DEFAULT: Record<string, string | number | boolean | 
 };
 
 export const SETTING_CONFIG_INFO: Record<string, string> = {
-	apiKey: 'Set the API Key if you are using <code>--api-key</code> option for the server.',
+	apiKey:
+		'Bearer token for the API. Used for this server when <code>--api-key</code> is set, and for remote OpenAI-compatible endpoints (e.g. OpenAI, Azure, or local gateways).',
+	openAiApiBaseUrl:
+		'Optional. Full base URL for OpenAI-compatible HTTP APIs, including <code>/v1</code> (e.g. <code>https://api.openai.com/v1</code> or <code>http://127.0.0.1:1234/v1</code>). Leave empty to use the same host as this web UI (llama-server). Add model names that are not returned by <code>GET /v1/models</code> with <strong>Manage models</strong> next to the model picker.',
+	openAiApiUseCorsProxy:
+		'When using a remote base URL, route requests through this site\'s <code>/cors-proxy</code> (requires llama-server with CORS proxy enabled) so the browser can reach cross-origin APIs.',
+	openAiCustomModels:
+		'Legacy newline/comma list of model ids (kept in sync when you use **Manage models** next to the model picker).',
+	openAiManagedModels:
+		'Flattened model ids from **Manage OpenAI-compatible servers** (synced for export / legacy). Prefer editing servers in that dialog.',
+	openAiServerProfiles:
+		'JSON array of OpenAI-compatible server profiles: optional name, baseUrl, apiKey, useCorsProxy, and models <code>[{ "id", "label?" }]</code>. Edited via **Manage models** next to the model picker.',
 	systemMessage: 'The starting message that defines how model should behave.',
 	showSystemMessage: 'Display the system message at the top of each conversation.',
 	theme:

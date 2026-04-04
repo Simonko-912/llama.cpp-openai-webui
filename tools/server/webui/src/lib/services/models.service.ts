@@ -1,6 +1,7 @@
 import { ServerModelStatus } from '$lib/enums';
 import { apiFetch, apiPost } from '$lib/utils';
 import type { ParsedModelId } from '$lib/types/models';
+import type { OpenAiConnectionContext } from '$lib/utils/api-target';
 import {
 	MODEL_QUANTIZATION_SEGMENT_RE,
 	MODEL_CUSTOM_QUANTIZATION_PREFIX_RE,
@@ -31,6 +32,15 @@ export class ModelsService {
 	 */
 	static async list(): Promise<ApiModelListResponse> {
 		return apiFetch<ApiModelListResponse>(API_MODELS.LIST);
+	}
+
+	/**
+	 * List models from a specific OpenAI-compatible base (or same host as the web UI).
+	 */
+	static async listOpenAi(
+		connection: OpenAiConnectionContext | 'same-origin'
+	): Promise<ApiModelListResponse> {
+		return apiFetch<ApiModelListResponse>(API_MODELS.LIST, { openAiConnection: connection });
 	}
 
 	/**

@@ -8,8 +8,31 @@
  */
 
 // API utilities
-export { getAuthHeaders, getJsonHeaders } from './api-headers';
+export { getAuthHeaders, getJsonHeaders, getJsonHeadersWithOpenAiKey } from './api-headers';
 export { apiFetch, apiFetchWithParams, apiPost, type ApiFetchOptions } from './api-fetch';
+export {
+	isRemoteOpenAiApi,
+	normalizeOpenAiApiBaseUrl,
+	resolveOpenAiHttpUrl,
+	prepareOpenAiFetch,
+	prepareOpenAiFetchSameOrigin,
+	prepareOpenAiFetchWithContext,
+	getSameOriginOpenAiRoot,
+	buildGlobalOpenAiConnectionFromConfig,
+	openAiRootsEffectivelyEqual,
+	openAiConnectionFetchKey,
+	resolveOpenAiConnectionForProfile,
+	parseOpenAiCustomModelIds,
+	parseOpenAiManagedModelsFromConfig,
+	parseOpenAiServerProfilesFromConfig,
+	serializeOpenAiManagedModels,
+	serializeOpenAiServerProfiles,
+	legacyManagedModelsFromProfiles,
+	legacyOpenAiCustomModelsTextFromManaged,
+	type OpenAiManagedModelEntry,
+	type OpenAiConnectionContext,
+	type OpenAiServerProfileStored
+} from './api-target';
 export { validateApiKey } from './api-key-validation';
 
 // Attachment utilities

@@ -12,6 +12,8 @@
 		singleModelName
 	} from '$lib/stores/models.svelte';
 	import { isRouterMode } from '$lib/stores/server.svelte';
+	import { isRemoteOpenAiApi } from '$lib/utils';
+	import { customModelsDialogStore } from '$lib/stores/custom-models-dialog.svelte';
 	import {
 		DialogModelInformation,
 		ModelsSelectorList,
@@ -50,13 +52,15 @@
 	let loading = $derived(modelsLoading());
 	let updating = $derived(modelsUpdating());
 	let activeId = $derived(selectedModelId());
-	let isRouter = $derived(isRouterMode());
+	let isRemoteOpenAi = $derived(isRemoteOpenAiApi());
+	let useModelListPicker = $derived(isRouterMode() || isRemoteOpenAi);
+	let canLoadUnloadModels = $derived(isRouterMode() && !isRemoteOpenAi);
 	let serverModel = $derived(singleModelName());
 
 	let isLoadingModel = $state(false);
 
 	let isHighlightedCurrentModelActive = $derived(
-		!isRouter || !currentModel
+		!useModelListPicker || !currentModel
 			? false
 			: (() => {
 					const currentOption = options.find((option) => option.model === currentModel);
@@ -66,7 +70,7 @@
 	);
 
 	let isCurrentModelInCache = $derived.by(() => {
-		if (!isRouter || !currentModel) return true;
+		if (!useModelListPicker || !currentModel) return true;
 
 		return options.some((option) => option.model === currentModel);
 	});
@@ -99,14 +103,18 @@
 	function handleOpenChange(open: boolean) {
 		if (loading || updating) return;
 
-		if (isRouter) {
+		if (useModelListPicker) {
 			if (open) {
 				sheetOpen = true;
 				searchTerm = '';
 
-				modelsStore.fetchRouterModels().then(() => {
-					modelsStore.fetchModalitiesForLoadedModels();
-				});
+				if (canLoadUnloadModels) {
+					modelsStore.fetchRouterModels().then(() => {
+						modelsStore.fetchModalitiesForLoadedModels();
+					});
+				} else {
+					modelsStore.fetch(true).catch((err) => console.warn('Failed to refresh models', err));
+				}
 			} else {
 				sheetOpen = false;
 				searchTerm = '';
@@ -153,7 +161,7 @@
 			});
 		}
 
-		if (!onModelChange && isRouter && !modelsStore.isModelLoaded(option.model)) {
+		if (!onModelChange && canLoadUnloadModels && !modelsStore.isModelLoaded(option.model)) {
 			isLoadingModel = true;
 			modelsStore
 				.loadModel(option.model)
@@ -163,7 +171,7 @@
 	}
 
 	function getDisplayOption(): ModelOption | undefined {
-		if (!isRouter) {
+		if (!useModelListPicker) {
 			if (serverModel) {
 				return {
 					id: 'current',
@@ -203,17 +211,27 @@
 </script>
 
 <div class={cn('relative inline-flex flex-col items-end gap-1', className)}>
-	{#if loading && options.length === 0 && isRouter}
+	{#if loading && options.length === 0 && useModelListPicker}
 		<div class="flex items-center gap-2 text-xs text-muted-foreground">
 			<Loader2 class="h-3.5 w-3.5 animate-spin" />
 			Loading models…
 		</div>
-	{:else if options.length === 0 && isRouter}
-		<p class="text-xs text-muted-foreground">No models available.</p>
+	{:else if options.length === 0 && useModelListPicker}
+		<div class="flex max-w-[16rem] flex-col items-end gap-1 text-right">
+			<p class="text-xs text-muted-foreground">No models available.</p>
+
+			<button
+				type="button"
+				class="text-xs font-medium text-primary underline-offset-2 hover:underline"
+				onclick={() => customModelsDialogStore.open()}
+			>
+				Manage API servers…
+			</button>
+		</div>
 	{:else}
 		{@const selectedOption = getDisplayOption()}
 
-		{#if isRouter}
+		{#if useModelListPicker}
 			<button
 				type="button"
 				class={cn(

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Square } from '@lucide/svelte';
+	import { ListPlus, Square } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import {
 		ChatFormActionAttachmentsDropdown,
@@ -14,12 +14,13 @@
 	import { mcpStore } from '$lib/stores/mcp.svelte';
 	import { getChatSettingsDialogContext } from '$lib/contexts';
 	import { FileTypeCategory } from '$lib/enums';
-	import { getFileTypeCategory } from '$lib/utils';
+	import { getFileTypeCategory, isRemoteOpenAiApi } from '$lib/utils';
 	import { config } from '$lib/stores/settings.svelte';
 	import { modelsStore, modelOptions, selectedModelId } from '$lib/stores/models.svelte';
 	import { isRouterMode, serverError } from '$lib/stores/server.svelte';
 	import { chatStore } from '$lib/stores/chat.svelte';
 	import { activeMessages, conversationsStore } from '$lib/stores/conversations.svelte';
+	import { customModelsDialogStore } from '$lib/stores/custom-models-dialog.svelte';
 	import { IsMobile } from '$lib/hooks/is-mobile.svelte';
 
 	interface Props {
@@ -55,7 +56,7 @@
 	}: Props = $props();
 
 	let currentConfig = $derived(config());
-	let isRouter = $derived(isRouterMode());
+	let useModelListPicker = $derived(isRouterMode() || isRemoteOpenAiApi());
 	let isOffline = $derived(!!serverError());
 
 	let conversationModel = $derived(
@@ -65,17 +66,25 @@
 	$effect(() => {
 		if (conversationModel) {
 			modelsStore.selectModelByName(conversationModel);
-		} else if (isRouter && !modelsStore.selectedModelId && modelsStore.loadedModelIds.length > 0) {
+		} else if (
+			isRouterMode() &&
+			!isRemoteOpenAiApi() &&
+			!modelsStore.selectedModelId &&
+			modelsStore.loadedModelIds.length > 0
+		) {
 			// auto-select the first loaded model only when nothing is selected yet
 			const first = modelOptions().find((m) => modelsStore.loadedModelIds.includes(m.model));
 			if (first) modelsStore.selectModelById(first.id);
+		} else if (isRemoteOpenAiApi() && !modelsStore.selectedModelId && modelOptions().length > 0) {
+			const first = modelOptions()[0];
+			if (first) void modelsStore.selectModelById(first.id);
 		}
 	});
 
 	let activeModelId = $derived.by(() => {
 		const options = modelOptions();
 
-		if (!isRouter) {
+		if (!useModelListPicker) {
 			return options.length > 0 ? options[0].model : null;
 		}
 
@@ -134,10 +143,12 @@
 		hasAudioModality && !hasText && !hasAudioAttachments && currentConfig.autoMicOnEmpty
 	);
 
-	let hasModelSelected = $derived(!isRouter || !!conversationModel || !!selectedModelId());
+	let hasModelSelected = $derived(
+		!useModelListPicker || !!conversationModel || !!selectedModelId()
+	);
 
 	let isSelectedModelInCache = $derived.by(() => {
-		if (!isRouter) return true;
+		if (!useModelListPicker) return true;
 
 		if (conversationModel) {
 			return modelOptions().some((option) => option.model === conversationModel);
@@ -221,6 +232,19 @@
 	</div>
 
 	<div class="ml-auto flex items-center gap-1.5">
+		<Button
+			type="button"
+			variant="outline"
+			size="icon"
+			class="h-8 w-8 shrink-0"
+			title="Manage custom OpenAI-compatible models"
+			aria-label="Manage OpenAI-compatible API servers"
+			disabled={disabled || isOffline}
+			onclick={() => customModelsDialogStore.open()}
+		>
+			<ListPlus class="h-4 w-4" />
+		</Button>
+
 		{#if isMobile.current}
 			<ModelsSelectorSheet
 				disabled={disabled || isOffline}

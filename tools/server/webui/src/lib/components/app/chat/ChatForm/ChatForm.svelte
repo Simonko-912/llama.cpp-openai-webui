@@ -32,6 +32,7 @@
 	import { mcpStore } from '$lib/stores/mcp.svelte';
 	import { mcpHasResourceAttachments } from '$lib/stores/mcp-resources.svelte';
 	import { conversationsStore, activeMessages } from '$lib/stores/conversations.svelte';
+	import { isRemoteOpenAiApi } from '$lib/utils';
 	import type { GetPromptResult, MCPPromptInfo, MCPResourceInfo, PromptMessage } from '$lib/types';
 	import { isIMEComposing, parseClipboardContent, uuid } from '$lib/utils';
 	import {
@@ -133,14 +134,14 @@
 	});
 
 	// Model Selection Logic
-	let isRouter = $derived(isRouterMode());
+	let useModelListPicker = $derived(isRouterMode() || isRemoteOpenAiApi());
 	let conversationModel = $derived(
 		chatStore.getConversationModel(activeMessages() as DatabaseMessage[])
 	);
 	let activeModelId = $derived.by(() => {
 		const options = modelOptions();
 
-		if (!isRouter) {
+		if (!useModelListPicker) {
 			return options.length > 0 ? options[0].model : null;
 		}
 
@@ -159,7 +160,9 @@
 	});
 
 	// Form Validation State
-	let hasModelSelected = $derived(!isRouter || !!conversationModel || !!selectedModelId());
+	let hasModelSelected = $derived(
+		!useModelListPicker || !!conversationModel || !!selectedModelId()
+	);
 	let hasLoadingAttachments = $derived(uploadedFiles.some((f) => f.isLoading));
 	let hasAttachments = $derived(
 		(attachments && attachments.length > 0) || (uploadedFiles && uploadedFiles.length > 0)

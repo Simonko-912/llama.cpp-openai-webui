@@ -8,6 +8,11 @@ export const SETTINGS_KEYS = {
 	// General
 	THEME: 'theme',
 	API_KEY: 'apiKey',
+	OPEN_AI_API_BASE_URL: 'openAiApiBaseUrl',
+	OPEN_AI_API_USE_CORS_PROXY: 'openAiApiUseCorsProxy',
+	OPEN_AI_CUSTOM_MODELS: 'openAiCustomModels',
+	OPEN_AI_MANAGED_MODELS: 'openAiManagedModels',
+	OPEN_AI_SERVER_PROFILES: 'openAiServerProfiles',
 	SYSTEM_MESSAGE: 'systemMessage',
 	PASTE_LONG_TEXT_TO_FILE_LEN: 'pasteLongTextToFileLen',
 	COPY_TEXT_ATTACHMENTS_AS_PLAIN_TEXT: 'copyTextAttachmentsAsPlainText',

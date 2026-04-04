@@ -23,7 +23,7 @@
 	import { modelsStore } from '$lib/stores/models.svelte';
 	import { ServerModelStatus } from '$lib/enums';
 
-	import { hasAgenticContent } from '$lib/utils';
+	import { hasAgenticContent, isRemoteOpenAiApi } from '$lib/utils';
 
 	interface Props {
 		class?: string;
@@ -93,7 +93,7 @@
 	const processingState = useProcessingState();
 
 	let currentConfig = $derived(config());
-	let isRouter = $derived(isRouterMode());
+	let showModelsSelector = $derived(isRouterMode() || isRemoteOpenAiApi());
 	let showRawOutput = $state(false);
 	let activeStatsView = $state<ChatMessageStatsView>(ChatMessageStatsView.GENERATION);
 	let statsContainerEl: HTMLDivElement | undefined = $state();
@@ -285,15 +285,17 @@
 				bind:this={statsContainerEl}
 				class="inline-flex flex-wrap items-start gap-2 text-xs text-muted-foreground"
 			>
-				{#if isRouter}
+				{#if showModelsSelector}
 					<ModelsSelector
 						currentModel={displayedModel}
 						disabled={isLoading()}
 						onModelChange={async (modelId, modelName) => {
-							const status = modelsStore.getModelStatus(modelId);
+							if (!isRemoteOpenAiApi()) {
+								const status = modelsStore.getModelStatus(modelId);
 
-							if (status !== ServerModelStatus.LOADED) {
-								await modelsStore.loadModel(modelId);
+								if (status !== ServerModelStatus.LOADED) {
+									await modelsStore.loadModel(modelId);
+								}
 							}
 
 							onRegenerate(modelName);

@@ -1,4 +1,5 @@
-import { getJsonHeaders } from '$lib/utils/api-headers';
+import { getJsonHeaders, getJsonHeadersWithOpenAiKey } from '$lib/utils/api-headers';
+import { prepareOpenAiFetch, prepareOpenAiFetchWithContext } from '$lib/utils/api-target';
 import { formatAttachmentText } from '$lib/utils/formatters';
 import { isAbortError } from '$lib/utils/abort';
 import {
@@ -201,9 +202,17 @@ export class ChatService {
 		}
 
 		try {
-			const response = await fetch(`./v1/chat/completions`, {
+			const modelName = options.model ?? '';
+			const openAiCtx = modelName ? modelsStore.getOpenAiConnectionForModel(modelName) : undefined;
+			const headerBase = openAiCtx
+				? getJsonHeadersWithOpenAiKey(openAiCtx.apiKey)
+				: getJsonHeaders();
+			const { url, headers } = openAiCtx
+				? prepareOpenAiFetchWithContext('chat/completions', headerBase, openAiCtx)
+				: prepareOpenAiFetch('chat/completions', headerBase);
+			const response = await fetch(url, {
 				method: 'POST',
-				headers: getJsonHeaders(),
+				headers,
 				body: JSON.stringify(requestBody),
 				signal
 			});

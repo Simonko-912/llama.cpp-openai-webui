@@ -30,7 +30,7 @@
 	import { config } from '$lib/stores/settings.svelte';
 	import { serverLoading, serverError, serverStore, isRouterMode } from '$lib/stores/server.svelte';
 	import { modelsStore, modelOptions, selectedModelId } from '$lib/stores/models.svelte';
-	import { isFileTypeSupported, filterFilesByModalities } from '$lib/utils';
+	import { isFileTypeSupported, filterFilesByModalities, isRemoteOpenAiApi } from '$lib/utils';
 	import { parseFilesToMessageExtras, processFilesToChatUploaded } from '$lib/utils/browser-only';
 	import { ErrorDialogType } from '$lib/enums';
 	import { onMount } from 'svelte';
@@ -79,7 +79,7 @@
 
 	let isCurrentConversationLoading = $derived(isLoading() || isChatStreaming());
 
-	let isRouter = $derived(isRouterMode());
+	let useModelListPicker = $derived(isRouterMode() || isRemoteOpenAiApi());
 
 	let conversationModel = $derived(
 		chatStore.getConversationModel(activeMessages() as DatabaseMessage[])
@@ -88,7 +88,7 @@
 	let activeModelId = $derived.by(() => {
 		const options = modelOptions();
 
-		if (!isRouter) {
+		if (!useModelListPicker) {
 			return options.length > 0 ? options[0].model : null;
 		}
 

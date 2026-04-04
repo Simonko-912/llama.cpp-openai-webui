@@ -18,6 +18,8 @@
 	} from '$lib/components/app';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
 	import { config, settingsStore } from '$lib/stores/settings.svelte';
+	import { modelsStore } from '$lib/stores/models.svelte';
+	import { normalizeOpenAiApiBaseUrl } from '$lib/utils/api-target';
 	import {
 		SETTINGS_SECTION_TITLES,
 		type SettingsSectionTitle,
@@ -54,6 +56,17 @@
 					options: SETTINGS_COLOR_MODES_CONFIG
 				},
 				{ key: SETTINGS_KEYS.API_KEY, label: 'API Key', type: SettingsFieldType.INPUT },
+				{
+					key: SETTINGS_KEYS.OPEN_AI_API_BASE_URL,
+					label: 'OpenAI-compatible API base URL',
+					type: SettingsFieldType.INPUT,
+					help: 'Include <code>/v1</code> (e.g. https://api.openai.com/v1). Leave empty to use this server.'
+				},
+				{
+					key: SETTINGS_KEYS.OPEN_AI_API_USE_CORS_PROXY,
+					label: 'Use server CORS proxy for remote API',
+					type: SettingsFieldType.CHECKBOX
+				},
 				{
 					key: SETTINGS_KEYS.SYSTEM_MESSAGE,
 					label: 'System Message',
@@ -363,6 +376,14 @@
 	}
 
 	function handleSave() {
+		const prevOpenAi = {
+			base: String(localConfig.openAiApiBaseUrl ?? ''),
+			proxy: Boolean(localConfig.openAiApiUseCorsProxy),
+			custom: String(localConfig.openAiCustomModels ?? ''),
+			managed: String(localConfig.openAiManagedModels ?? ''),
+			profiles: String(localConfig.openAiServerProfiles ?? '')
+		};
+
 		if (localConfig.custom && typeof localConfig.custom === 'string' && localConfig.custom.trim()) {
 			try {
 				JSON.parse(localConfig.custom);
@@ -375,6 +396,19 @@
 
 		// Convert numeric strings to numbers for numeric fields
 		const processedConfig = { ...localConfig };
+
+		try {
+			const baseStr = processedConfig.openAiApiBaseUrl;
+			if (typeof baseStr === 'string' && baseStr.trim()) {
+				processedConfig.openAiApiBaseUrl = normalizeOpenAiApiBaseUrl(baseStr);
+				new URL(processedConfig.openAiApiBaseUrl);
+			} else {
+				processedConfig.openAiApiBaseUrl = '';
+			}
+		} catch {
+			alert('Invalid OpenAI-compatible API base URL. Use http:// or https:// with a valid host.');
+			return;
+		}
 
 		for (const field of NUMERIC_FIELDS) {
 			if (processedConfig[field] !== undefined && processedConfig[field] !== '') {
@@ -393,6 +427,17 @@
 		}
 
 		settingsStore.updateMultipleConfig(processedConfig);
+
+		if (
+			prevOpenAi.base !== String(processedConfig.openAiApiBaseUrl ?? '') ||
+			prevOpenAi.proxy !== Boolean(processedConfig.openAiApiUseCorsProxy) ||
+			prevOpenAi.custom !== String(processedConfig.openAiCustomModels ?? '') ||
+			prevOpenAi.managed !== String(processedConfig.openAiManagedModels ?? '') ||
+			prevOpenAi.profiles !== String(processedConfig.openAiServerProfiles ?? '')
+		) {
+			modelsStore.fetch(true).catch((err) => console.warn('Failed to refresh models after API settings change', err));
+		}
+
 		onSave?.();
 	}
 

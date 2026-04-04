@@ -37,6 +37,13 @@
 export { default as DialogChatSettings } from './DialogChatSettings.svelte';
 
 /**
+ * **DialogManageCustomModels** — Configure OpenAI-compatible servers (base URL, API key, CORS proxy, models).
+ *
+ * Persists to `openAiServerProfiles` (JSON), and syncs `openAiManagedModels` / `openAiCustomModels` for legacy/export.
+ */
+export { default as DialogManageCustomModels } from './DialogManageCustomModels.svelte';
+
+/**
  *
  * CONFIRMATION DIALOGS
  *
