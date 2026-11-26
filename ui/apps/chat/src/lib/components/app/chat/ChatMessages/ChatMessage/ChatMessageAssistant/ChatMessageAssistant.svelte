@@ -15,7 +15,7 @@
 	import { MessageRole } from '#lib/enums/index.ts';
 	import { useProcessingState } from '#lib/hooks/use-processing-state.svelte.ts';
 	import { chatStore, modelsStore, serverStore, settingsStore } from '#lib/stores/index.ts';
-	import { hasAgenticContent, modelLoadProgressText } from '#lib/utils/index.ts';
+	import { hasAgenticContent, isRemoteOpenAiApi, modelLoadProgressText } from '#lib/utils/index.ts';
 
 	interface Props {
 		class?: string;
@@ -43,7 +43,8 @@
 	const processingState = useProcessingState();
 
 	let currentConfig = $derived(settingsStore.config);
-	let isRouter = $derived(serverStore.isRouterMode);
+	// the model row shows on a router and on a remote OpenAI-compatible endpoint
+	let isRouter = $derived(serverStore.isRouterMode || isRemoteOpenAiApi());
 
 	let showRawOutput = $state(false);
 

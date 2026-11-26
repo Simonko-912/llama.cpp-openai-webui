@@ -9,6 +9,7 @@
 import { API_MODELS, MODEL_ID, type ModelSidecar } from '#lib/constants/index.ts';
 import { ServerModelStatus } from '#lib/enums/index.ts';
 import type { ModelSidecarBadge, ParsedModelId } from '#lib/types/models.js';
+import type { OpenAiConnectionContext } from '#lib/utils/api-target.ts';
 import { getAuthHeaders } from '#lib/utils/api-headers.ts';
 import {
 	apiDelete,
@@ -142,6 +143,17 @@ export class ModelsService {
 	 */
 	static async list(): Promise<ApiModelsListResponse> {
 		return apiFetch<ApiModelsListResponse>(API_MODELS.LIST);
+	}
+
+	/**
+	 * List models from a specific OpenAI-compatible base (or same host as the web UI).
+	 * apiFetch routes `/v1/*` through the configured remote endpoint; the connection
+	 * picks a specific server profile instead of the global one.
+	 */
+	static async listOpenAi(
+		connection: OpenAiConnectionContext | 'same-origin'
+	): Promise<ApiModelsListResponse> {
+		return apiFetch<ApiModelsListResponse>(API_MODELS.LIST, { openAiConnection: connection });
 	}
 
 	/**

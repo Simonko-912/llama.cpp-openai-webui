@@ -6,6 +6,7 @@
 		DialogConversationSelection,
 		DialogImportConversationPreview,
 		DialogImportConversationsResult,
+		DialogManageCustomModels,
 		DialogSettingsImportPreview,
 		DropImportOverlay,
 		GlassKey,
@@ -43,7 +44,7 @@
 		versionStore
 	} from '#lib/stores/index.ts';
 	import { initStores } from '#lib/stores/init.ts';
-	import { hapticTap } from '#lib/utils/index.ts';
+	import { hapticTap, isRemoteOpenAiApi } from '#lib/utils/index.ts';
 	import { serverUrl } from '#lib/utils/server-config.ts';
 	import { browser } from '$app/env';
 	import { afterNavigate, goto } from '$app/navigation';
@@ -267,8 +268,9 @@
 		const isRouter = serverStore.isRouterMode;
 		const modelsCount = modelsStore.models.length;
 
-		// Only fetch router models once when we have models loaded and in router mode
-		if (isRouter && modelsCount > 0 && !routerModelsFetched) {
+		// Only fetch router models once when we have models loaded and in router mode;
+		// a remote OpenAI-compatible endpoint has no router to introspect
+		if (isRouter && !isRemoteOpenAiApi() && modelsCount > 0 && !routerModelsFetched) {
 			routerModelsFetched = true;
 
 			untrack(() => {
@@ -517,6 +519,9 @@
 		onClose={dropImport.cancelBulk}
 		onOpen={dropImport.openConversation}
 	/>
+
+	<!-- global OpenAI-compatible servers dialog, opened from the chat bar -->
+	<DialogManageCustomModels />
 
 	<!-- a debug tool, kept with the tests and loaded on demand, so it stays out of the production bundle -->
 	{#if import.meta.env.DEV && import.meta.env.VITE_DEBUG}

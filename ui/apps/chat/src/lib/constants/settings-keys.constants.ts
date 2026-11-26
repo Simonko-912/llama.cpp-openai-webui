@@ -43,6 +43,12 @@ export const SETTINGS_KEYS = {
 	MCP_SERVERS: 'mcpServers',
 	MENTION_SEARCH_MAX_DEPTH: 'mentionSearchMaxDepth',
 	MIN_P: 'min_p',
+	// OpenAI-compatible servers
+	OPEN_AI_API_BASE_URL: 'openAiApiBaseUrl',
+	OPEN_AI_API_USE_CORS_PROXY: 'openAiApiUseCorsProxy',
+	OPEN_AI_CUSTOM_MODELS: 'openAiCustomModels',
+	OPEN_AI_MANAGED_MODELS: 'openAiManagedModels',
+	OPEN_AI_SERVER_PROFILES: 'openAiServerProfiles',
 	// Display
 	PASTE_LONG_TEXT_TO_FILE_LEN: 'pasteLongTextToFileLen',
 	PDF_AS_IMAGE: 'pdfAsImage',

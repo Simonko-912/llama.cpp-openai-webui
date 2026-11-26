@@ -68,6 +68,7 @@
 		findMentionToken,
 		getConversationModel,
 		isIMEComposing,
+		isRemoteOpenAiApi,
 		parseClipboardContent,
 		uuid
 	} from '#lib/utils/index.ts';
@@ -267,7 +268,8 @@
 		return Number.isNaN(n) ? Number(SETTING_CONFIG_DEFAULT.pasteLongTextToFileLen) : n;
 	});
 
-	let isRouter = $derived(serverStore.isRouterMode);
+	// a remote OpenAI-compatible endpoint gives the form a picker, like a router
+	let isRouter = $derived(serverStore.isRouterMode || isRemoteOpenAiApi());
 	let conversationModel = $derived(
 		getConversationModel(conversationsStore.activeMessages as DatabaseMessage[])
 	);

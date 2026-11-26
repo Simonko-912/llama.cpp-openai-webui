@@ -2,11 +2,12 @@
  * Resolve OpenAI-compatible HTTP(S) API base URL and optional CORS proxy routing.
  */
 
-import { browser } from '$app/environment';
-import { base } from '$app/paths';
-import { config } from '$lib/stores/settings.svelte';
+import { browser } from '$app/env';
+import { SETTINGS_KEYS } from '#lib/constants/index.ts';
+import { settingsStore } from '#lib/stores/settings/index.svelte.ts';
 import { getAuthHeaders } from './api-headers';
-import { getProxiedUrlString, buildProxiedHeaders } from './cors-proxy';
+import { buildProxiedHeaders, buildProxiedUrl } from './cors-proxy';
+import { serverUrl } from './server-config';
 
 /** Resolved target for chat/completions and GET /v1/models (per server or global). */
 export interface OpenAiConnectionContext {
@@ -25,8 +26,8 @@ export interface OpenAiServerProfileStored {
 }
 
 export function isRemoteOpenAiApi(): boolean {
-	const cfg = config();
-	if (cfg.openAiApiBaseUrl?.toString().trim()) return true;
+	const cfg = settingsStore.config;
+	if (String(cfg[SETTINGS_KEYS.OPEN_AI_API_BASE_URL] ?? '').trim()) return true;
 	for (const p of parseOpenAiServerProfilesFromConfig(cfg as Record<string, unknown>)) {
 		if (p.baseUrl?.toString().trim()) return true;
 		if ((p.models?.length ?? 0) > 0) return true;
@@ -55,13 +56,12 @@ export function normalizeOpenAiApiBaseUrl(input: string): string {
 }
 
 export function getSameOriginOpenAiRoot(): string {
-	const b = base.endsWith('/') ? base.slice(0, -1) : base;
-	const joined = `${b}/v1`;
-	return joined.replace(/([^:]\/)\/+/g, '$1');
+	// serverUrl honours config.json's `server` and the app base path, same as every other API call
+	return serverUrl('/v1');
 }
 
 function getResolvedOpenAiRoot(): string {
-	const custom = config().openAiApiBaseUrl?.toString().trim();
+	const custom = String(settingsStore.config[SETTINGS_KEYS.OPEN_AI_API_BASE_URL] ?? '').trim();
 	if (custom) {
 		return normalizeOpenAiApiBaseUrl(custom);
 	}
@@ -89,7 +89,10 @@ export function shouldProxyOpenAiUrl(targetUrl: string, useCorsProxy: boolean): 
 }
 
 export function shouldProxyOpenAiRequest(targetUrl: string): boolean {
-	return shouldProxyOpenAiUrl(targetUrl, config().openAiApiUseCorsProxy);
+	return shouldProxyOpenAiUrl(
+		targetUrl,
+		Boolean(settingsStore.config[SETTINGS_KEYS.OPEN_AI_API_USE_CORS_PROXY])
+	);
 }
 
 function joinOpenAiSubpath(root: string, subpath: string): string {
@@ -111,7 +114,7 @@ export function prepareOpenAiFetchResolved(
 	const targetUrl = joinOpenAiSubpath(root, subpath);
 	if (shouldProxyOpenAiUrl(targetUrl, useCorsProxy)) {
 		return {
-			url: getProxiedUrlString(targetUrl),
+			url: buildProxiedUrl(targetUrl).toString(),
 			headers: {
 				...getAuthHeaders(),
 				...buildProxiedHeaders(headers)
@@ -128,7 +131,7 @@ export function prepareOpenAiFetchSameOrigin(
 	subpath: string,
 	headers: Record<string, string>
 ): { url: string; headers: Record<string, string> } {
-	const useProxy = Boolean(config().openAiApiUseCorsProxy);
+	const useProxy = Boolean(settingsStore.config[SETTINGS_KEYS.OPEN_AI_API_USE_CORS_PROXY]);
 	return prepareOpenAiFetchResolved(subpath, headers, getSameOriginOpenAiRoot(), useProxy);
 }
 
@@ -151,18 +154,18 @@ export function prepareOpenAiFetch(
 		subpath,
 		headers,
 		getResolvedOpenAiRoot(),
-		Boolean(config().openAiApiUseCorsProxy)
+		Boolean(settingsStore.config[SETTINGS_KEYS.OPEN_AI_API_USE_CORS_PROXY])
 	);
 }
 
 export function buildGlobalOpenAiConnectionFromConfig(): OpenAiConnectionContext | undefined {
-	const cfg = config();
-	const url = cfg.openAiApiBaseUrl?.toString().trim();
+	const cfg = settingsStore.config;
+	const url = String(cfg[SETTINGS_KEYS.OPEN_AI_API_BASE_URL] ?? '').trim();
 	if (!url) return undefined;
 	return {
 		baseUrl: normalizeOpenAiApiBaseUrl(url),
-		apiKey: cfg.apiKey?.toString().trim() || undefined,
-		useCorsProxy: Boolean(cfg.openAiApiUseCorsProxy)
+		apiKey: String(cfg[SETTINGS_KEYS.API_KEY] ?? '').trim() || undefined,
+		useCorsProxy: Boolean(cfg[SETTINGS_KEYS.OPEN_AI_API_USE_CORS_PROXY])
 	};
 }
 
@@ -263,7 +266,9 @@ function parseServerProfilesJson(raw: unknown): OpenAiServerProfileStored[] {
 /**
  * Server profiles from settings, or one synthetic profile from legacy `openAiManagedModels`.
  */
-export function parseOpenAiServerProfilesFromConfig(cfg: Record<string, unknown>): OpenAiServerProfileStored[] {
+export function parseOpenAiServerProfilesFromConfig(
+	cfg: Record<string, unknown>
+): OpenAiServerProfileStored[] {
 	const fromNew = dedupeProfiles(parseServerProfilesJson(cfg.openAiServerProfiles));
 	if (fromNew.length > 0) return fromNew;
 
@@ -280,7 +285,9 @@ export function serializeOpenAiServerProfiles(profiles: OpenAiServerProfileStore
 	return JSON.stringify(dedupeProfiles(profiles));
 }
 
-export function legacyManagedModelsFromProfiles(profiles: OpenAiServerProfileStored[]): OpenAiManagedModelEntry[] {
+export function legacyManagedModelsFromProfiles(
+	profiles: OpenAiServerProfileStored[]
+): OpenAiManagedModelEntry[] {
 	const merged: OpenAiManagedModelEntry[] = [];
 	for (const p of profiles) {
 		if (p.models?.length) merged.push(...p.models);
@@ -349,7 +356,9 @@ function parseManagedModelsJson(raw: unknown): OpenAiManagedModelEntry[] {
 /**
  * Custom OpenAI-compatible models from settings: server profiles, JSON list, or legacy `openAiCustomModels` text.
  */
-export function parseOpenAiManagedModelsFromConfig(cfg: Record<string, unknown>): OpenAiManagedModelEntry[] {
+export function parseOpenAiManagedModelsFromConfig(
+	cfg: Record<string, unknown>
+): OpenAiManagedModelEntry[] {
 	const profiles = parseOpenAiServerProfilesFromConfig(cfg);
 	if (profiles.length > 0) {
 		const flat = legacyManagedModelsFromProfiles(profiles);
@@ -366,7 +375,9 @@ export function serializeOpenAiManagedModels(entries: OpenAiManagedModelEntry[])
 }
 
 /** Keep legacy key in sync for export / older builds. */
-export function legacyOpenAiCustomModelsTextFromManaged(entries: OpenAiManagedModelEntry[]): string {
+export function legacyOpenAiCustomModelsTextFromManaged(
+	entries: OpenAiManagedModelEntry[]
+): string {
 	return dedupeManagedEntries(entries)
 		.map((e) => e.id)
 		.join('\n');

@@ -1,5 +1,12 @@
-import { getAuthHeaders, getJsonHeaders } from './api-headers';
+import { getAuthHeaders, getJsonHeaders, getJsonHeadersWithOpenAiKey } from './api-headers';
 import { getServerBase, serverUrl } from './server-config';
+import {
+	openAiPathFromApiFetchPath,
+	prepareOpenAiFetch,
+	prepareOpenAiFetchSameOrigin,
+	prepareOpenAiFetchWithContext,
+	type OpenAiConnectionContext
+} from './api-target';
 import {
 	API_ABSOLUTE_URL_PROTOCOLS,
 	ERROR_MESSAGES,
@@ -40,6 +47,19 @@ export interface ApiFetchOptions extends Omit<RequestInit, 'headers'> {
 	 * Additional headers to merge with default headers.
 	 */
 	headers?: Record<string, string>;
+	/**
+	 * For `/v1/*` paths: target OpenAI-compatible server (default uses global base URL or same host).
+	 */
+	openAiConnection?: OpenAiConnectionContext | 'same-origin';
+}
+
+/** True for the OpenAI-compatible API paths (`/v1/models`, `./v1/chat/completions`, …). */
+function isOpenAiCompatibleFetchPath(path: string): boolean {
+	if (API_ABSOLUTE_URL_PROTOCOLS.some((p) => path.startsWith(p))) {
+		return false;
+	}
+	const p = path.startsWith('/') ? path : `/${path.replace(/^\.?\/?/, '')}`;
+	return p === '/v1/models' || p.startsWith('/v1/');
 }
 
 /**
@@ -63,18 +83,43 @@ export interface ApiFetchOptions extends Omit<RequestInit, 'headers'> {
  * ```
  */
 export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
-	const { authOnly = false, headers: customHeaders, ...fetchOptions } = options;
-	const baseHeaders = authOnly ? getAuthHeaders() : getJsonHeaders();
+	const { authOnly = false, headers: customHeaders, openAiConnection, ...fetchOptions } = options;
+
+	let baseHeaders = authOnly ? getAuthHeaders() : getJsonHeaders();
+	if (openAiConnection && typeof openAiConnection === 'object' && !authOnly) {
+		baseHeaders = getJsonHeadersWithOpenAiKey(openAiConnection.apiKey);
+	}
 	const headers = { ...baseHeaders, ...customHeaders };
-	// absolute URLs with an allowed protocol pass through untouched; relative paths go to the server
-	const url = API_ABSOLUTE_URL_PROTOCOLS.some((p) => path.startsWith(p)) ? path : serverUrl(path);
+
+	let url: string;
+	let finalHeaders = headers;
+
+	if (API_ABSOLUTE_URL_PROTOCOLS.some((p) => path.startsWith(p))) {
+		// absolute URLs with an allowed protocol pass through untouched
+		url = path;
+	} else if (isOpenAiCompatibleFetchPath(path)) {
+		// OpenAI-compatible calls follow the configured remote endpoint, else this server
+		const subpath = openAiPathFromApiFetchPath(path);
+		let prepared;
+		if (openAiConnection === 'same-origin') {
+			prepared = prepareOpenAiFetchSameOrigin(subpath, headers);
+		} else if (openAiConnection && typeof openAiConnection === 'object') {
+			prepared = prepareOpenAiFetchWithContext(subpath, headers, openAiConnection);
+		} else {
+			prepared = prepareOpenAiFetch(subpath, headers);
+		}
+		url = prepared.url;
+		finalHeaders = prepared.headers;
+	} else {
+		url = serverUrl(path);
+	}
 
 	let response;
 
 	try {
 		response = await fetch(url, {
 			...fetchOptions,
-			headers
+			headers: finalHeaders
 		});
 	} catch (e) {
 		throw new Error(beautifyNetworkError(e), { cause: e });

@@ -1,25 +1,25 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import Label from '$lib/components/ui/label/label.svelte';
-	import { Checkbox } from '$lib/components/ui/checkbox';
-	import { ScrollArea } from '$lib/components/ui/scroll-area';
+	import * as Dialog from '@ggml-org/llama-ui/ui/dialog';
+	import { Button } from '@ggml-org/llama-ui/ui/button';
+	import { Checkbox } from '@ggml-org/llama-ui/ui/checkbox';
+	import { Input } from '@ggml-org/llama-ui/ui/input';
+	import { Label } from '@ggml-org/llama-ui/ui/label';
+	import { ScrollArea } from '@ggml-org/llama-ui/ui/scroll-area';
 	import { Plus, Trash2 } from '@lucide/svelte';
-	import { config, settingsStore } from '$lib/stores/settings.svelte';
-	import { modelsStore } from '$lib/stores/models.svelte';
-	import { customModelsDialogStore } from '$lib/stores/custom-models-dialog.svelte';
+	import { SETTINGS_KEYS } from '#lib/constants/index.ts';
+	import { customModelsDialogStore } from '#lib/stores/custom-models-dialog.svelte.ts';
+	import { modelsStore, settingsStore } from '#lib/stores/index.ts';
 	import {
-		parseOpenAiServerProfilesFromConfig,
-		serializeOpenAiServerProfiles,
 		legacyManagedModelsFromProfiles,
-		serializeOpenAiManagedModels,
 		legacyOpenAiCustomModelsTextFromManaged,
 		normalizeOpenAiApiBaseUrl,
-		type OpenAiServerProfileStored,
-		type OpenAiManagedModelEntry
-	} from '$lib/utils/api-target';
+		parseOpenAiServerProfilesFromConfig,
+		serializeOpenAiManagedModels,
+		serializeOpenAiServerProfiles,
+		type OpenAiManagedModelEntry,
+		type OpenAiServerProfileStored
+	} from '#lib/utils/api-target.ts';
 
 	type ModelRow = { id: string; label: string };
 
@@ -50,7 +50,9 @@
 	let loadedForCurrentOpen = $state(false);
 
 	function loadFromConfig() {
-		const profiles = parseOpenAiServerProfilesFromConfig(config() as Record<string, unknown>);
+		const profiles = parseOpenAiServerProfilesFromConfig(
+			settingsStore.config as unknown as Record<string, unknown>
+		);
 		servers = profiles.map((p) => ({
 			name: p.name ?? '',
 			baseUrl: p.baseUrl ?? '',
@@ -68,7 +70,7 @@
 
 	/**
 	 * Reload draft from saved settings once when the dialog opens.
-	 * `loadFromConfig` reads `config()`; it must run inside `untrack` so reactive
+	 * `loadFromConfig` reads the settings store; it must run inside `untrack` so reactive
 	 * settings updates are not effect dependencies (that was wiping inputs each keystroke).
 	 */
 	$effect(() => {
@@ -163,9 +165,9 @@
 		const legacy = legacyOpenAiCustomModelsTextFromManaged(flat);
 
 		settingsStore.updateMultipleConfig({
-			openAiServerProfiles: serializedProfiles,
-			openAiManagedModels: serializedManaged,
-			openAiCustomModels: legacy
+			[SETTINGS_KEYS.OPEN_AI_SERVER_PROFILES]: serializedProfiles,
+			[SETTINGS_KEYS.OPEN_AI_MANAGED_MODELS]: serializedManaged,
+			[SETTINGS_KEYS.OPEN_AI_CUSTOM_MODELS]: legacy
 		});
 
 		modelsStore
@@ -185,10 +187,10 @@
 			<Dialog.Title>Manage OpenAI-compatible servers</Dialog.Title>
 
 			<Dialog.Description>
-				Add one block per API: optional display name, base URL (with <code class="text-xs">/v1</code> if
-				needed), optional API key, and model ids sent as the <code class="text-xs">model</code> field.
+				Add one block per API: optional display name, base URL (with <code class="text-caption">/v1</code> if
+				needed), optional API key, and model ids sent as the <code class="text-caption">model</code> field.
 				Leave base URL empty to use the same target as <strong>General → OpenAI-compatible API base URL</strong>
-				(or this host if that is empty). Models from <code class="text-xs">GET /v1/models</code> are merged per
+				(or this host if that is empty). Models from <code class="text-caption">GET /v1/models</code> are merged per
 				server when the URL is reachable.
 			</Dialog.Description>
 		</Dialog.Header>
@@ -198,7 +200,7 @@
 				{#each servers as server, si (si)}
 					<div class="space-y-3 rounded-md border border-border/60 p-3">
 						<div class="flex flex-wrap items-center justify-between gap-2">
-							<span class="text-sm font-medium text-foreground">Server {si + 1}</span>
+							<span class="text-body-sm font-medium text-foreground">Server {si + 1}</span>
 
 							<Button
 								type="button"
@@ -215,7 +217,7 @@
 
 						<div class="grid gap-3 sm:grid-cols-2">
 							<div class="space-y-1.5 sm:col-span-2">
-								<Label for="srv-name-{si}" class="text-xs">Display name (optional)</Label>
+								<Label for="srv-name-{si}" class="text-caption">Display name (optional)</Label>
 
 								<Input
 									id="srv-name-{si}"
@@ -231,7 +233,7 @@
 							</div>
 
 							<div class="space-y-1.5 sm:col-span-2">
-								<Label for="srv-url-{si}" class="text-xs">Base URL (optional)</Label>
+								<Label for="srv-url-{si}" class="text-caption">Base URL (optional)</Label>
 
 								<Input
 									id="srv-url-{si}"
@@ -247,7 +249,7 @@
 							</div>
 
 							<div class="space-y-1.5 sm:col-span-2">
-								<Label for="srv-key-{si}" class="text-xs">API key (optional)</Label>
+								<Label for="srv-key-{si}" class="text-caption">API key (optional)</Label>
 
 								<Input
 									id="srv-key-{si}"
@@ -275,21 +277,21 @@
 									}}
 								/>
 
-								<Label for="srv-proxy-{si}" class="text-xs font-normal leading-none">
+								<Label for="srv-proxy-{si}" class="text-caption font-normal leading-none">
 									Use CORS proxy for this server
 								</Label>
 							</div>
 						</div>
 
 						<div class="space-y-2">
-							<span class="text-xs font-medium text-muted-foreground">Models</span>
+							<span class="text-caption font-medium text-muted-foreground">Models</span>
 
 							{#each server.models as modelRow, mi (mi)}
 								<div
 									class="grid gap-2 rounded-md border border-border/40 p-2 sm:grid-cols-[1fr_1fr_auto] sm:items-end"
 								>
 									<div class="space-y-1.5">
-										<Label for="m-id-{si}-{mi}" class="text-xs">Model id</Label>
+										<Label for="m-id-{si}-{mi}" class="text-caption">Model id</Label>
 
 										<Input
 											id="m-id-{si}-{mi}"
@@ -313,7 +315,7 @@
 									</div>
 
 									<div class="space-y-1.5">
-										<Label for="m-label-{si}-{mi}" class="text-xs">Display name (optional)</Label>
+										<Label for="m-label-{si}-{mi}" class="text-caption">Display name (optional)</Label>
 
 										<Input
 											id="m-label-{si}-{mi}"

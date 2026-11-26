@@ -1,6 +1,7 @@
 import { CHAT_INPUT_FOCUS_SELECTOR } from '#lib/constants/index.ts';
 import { deviceStore, modelsStore, serverStore, uiStore } from '#lib/stores/index.ts';
 import type { ModelOption } from '#lib/types/models.js';
+import { isRemoteOpenAiApi } from '#lib/utils/api-target.ts';
 import {
 	filterModelOptions,
 	groupFavoriteOptions,
@@ -66,8 +67,9 @@ export function useModelsSelector(opts: UseModelsSelectorOptions): UseModelsSele
 	const loading = $derived(modelsStore.loading);
 	const updating = $derived(modelsStore.updating);
 	const activeId = $derived(modelsStore.selectedModelId);
-	// a lone llama.cpp server without a router has nothing to choose from
-	const isRouter = $derived(serverStore.isRouterMode);
+	// a lone llama.cpp server without a router has nothing to choose from; a remote
+	// OpenAI-compatible endpoint does, so it gets the list picker too
+	const isRouter = $derived(serverStore.isRouterMode || isRemoteOpenAiApi());
 	const serverModel = $derived(modelsStore.singleModelName);
 	const currentModel = $derived(opts.currentModel());
 	const onModelChange = $derived(opts.onModelChange?.());
@@ -134,7 +136,11 @@ export function useModelsSelector(opts: UseModelsSelectorOptions): UseModelsSele
 		searchTerm = '';
 
 		if (open && isRouter) {
-			modelsStore.props.fetchModalitiesForLoadedModels();
+			if (serverStore.isRouterMode && !isRemoteOpenAiApi()) {
+				modelsStore.props.fetchModalitiesForLoadedModels();
+			} else {
+				modelsStore.fetch(true).catch((error) => console.warn('Failed to refresh models', error));
+			}
 		}
 
 		opts.onOpenChange?.(open);
@@ -168,10 +174,12 @@ export function useModelsSelector(opts: UseModelsSelectorOptions): UseModelsSele
 		}
 
 		// only the built-in server loads on request, and only in router mode; a model
-		// that is already loading is only selected, not loaded a second time
+		// that is already loading is only selected, not loaded a second time; remote
+		// OpenAI models are always ready on their own server, never (un)loaded here
 		if (
 			!onModelChange &&
-			isRouter &&
+			serverStore.isRouterMode &&
+			!isRemoteOpenAiApi() &&
 			!modelsStore.isModelLoaded(option.model) &&
 			!modelsStore.isModelLoading(option.model)
 		) {
