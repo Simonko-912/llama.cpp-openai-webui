@@ -920,7 +920,7 @@ static void * ggml_backend_cann_buffer_get_base(ggml_backend_buffer_t buffer) {
  * @param dst Pointer to the destination buffer where transformed data will be
  * stored.
  */
-static void ggml_backend_cann_transform_q4_0(ggml_tensor * tensor, const void * src, void * dst) {
+static void ggml_backend_cann_transform_q4_0(const ggml_tensor * tensor, const void * src, void * dst) {
     int64_t n_elems     = ggml_nelements(tensor);
     int64_t groups      = n_elems / QK4_0;
     size_t  quant_bytes = n_elems * sizeof(uint8_t) / 2;
@@ -1014,7 +1014,7 @@ static void ggml_backend_cann_transform_back_q4_0(const ggml_tensor * tensor, vo
  * @param dst Pointer to the destination buffer where transformed data will be
  * stored.
  */
-static void ggml_backend_cann_transform_q8_0(ggml_tensor * tensor, const void * src, void * dst) {
+static void ggml_backend_cann_transform_q8_0(const ggml_tensor * tensor, const void * src, void * dst) {
     int64_t n_elems     = ggml_nelements(tensor);
     int64_t groups      = n_elems / QK8_0;
     size_t  quant_bytes = n_elems * sizeof(uint8_t);
@@ -1075,7 +1075,7 @@ static void ggml_backend_cann_transform_back_q8_0(const ggml_tensor * tensor, co
  * @param dst Pointer to the destination buffer where transformed data will be
  * stored.
  */
-static void ggml_backend_cann_transform(ggml_tensor * tensor, const void * src, void * dst) {
+static void ggml_backend_cann_transform(const ggml_tensor * tensor, const void * src, void * dst) {
     switch (tensor->type) {
         case GGML_TYPE_Q4_0:
             ggml_backend_cann_transform_q4_0(tensor, src, dst);
@@ -1398,34 +1398,51 @@ static void ggml_backend_cann_buffer_get_tensor(ggml_backend_buffer_t buffer,
 static bool ggml_backend_cann_buffer_cpy_tensor(ggml_backend_buffer_t buffer,
                                                 const ggml_tensor *   src,
                                                 ggml_tensor *         dst) {
-    if (ggml_backend_buft_is_cann(src->buffer->buft)) {
-        ggml_backend_cann_buffer_context * src_ctx = (ggml_backend_cann_buffer_context *) src->buffer->context;
-        ggml_backend_cann_buffer_context * dst_ctx = (ggml_backend_cann_buffer_context *) buffer->context;
+    if (!ggml_backend_buft_is_cann(src->buffer->buft)) {
+        return false;
+    }
 
-        size_t memcpy_size = ggml_nbytes(src);
-        // Same device.
-        if (src_ctx->device == dst_ctx->device) {
-            ACL_CHECK(aclrtMemcpy((char *) dst->data, memcpy_size, (const char *) src->data, memcpy_size,
-                                  ACL_MEMCPY_DEVICE_TO_DEVICE));
-            return true;
-        } else {
+    ggml_backend_cann_buffer_context * src_ctx = (ggml_backend_cann_buffer_context *) src->buffer->context;
+    ggml_backend_cann_buffer_context * dst_ctx = (ggml_backend_cann_buffer_context *) buffer->context;
+
+    size_t memcpy_size = ggml_nbytes(src);
+    // Same device.
+    if (src_ctx->device == dst_ctx->device) {
+        ACL_CHECK(aclrtMemcpy((char *) dst->data, memcpy_size, (const char *) src->data, memcpy_size,
+                                ACL_MEMCPY_DEVICE_TO_DEVICE));
+        return true;
+    } else {
 #ifdef ASCEND_310P
-            // TODO: Support 310p P2P copy
-            return false;
+        // TODO: Support 310p P2P copy
+        return false;
 #endif
-            // Different device but can access by peer.
-            int32_t canAccessPeer = 0;
-            ACL_CHECK(aclrtDeviceCanAccessPeer(&canAccessPeer, src_ctx->device, dst_ctx->device));
-            if (canAccessPeer) {
-                ggml_cann_set_device(src_ctx->device);
-                ACL_CHECK(aclrtDeviceEnablePeerAccess(dst_ctx->device, 0));
-                ACL_CHECK(aclrtMemcpy((char *) dst->data, memcpy_size, (const char *) src->data, memcpy_size,
-                                      ACL_MEMCPY_DEVICE_TO_DEVICE));
-                return true;
-            }
+        // Different device but can access by peer.
+        int32_t canAccessPeer = 0;
+        ACL_CHECK(aclrtDeviceCanAccessPeer(&canAccessPeer, src_ctx->device, dst_ctx->device));
+        if (canAccessPeer) {
+            ggml_cann_set_device(src_ctx->device);
+            ACL_CHECK(aclrtDeviceEnablePeerAccess(dst_ctx->device, 0));
+            ACL_CHECK(aclrtMemcpy((char *) dst->data, memcpy_size, (const char *) src->data, memcpy_size,
+                                    ACL_MEMCPY_DEVICE_TO_DEVICE));
+            return true;
         }
     }
-    return false;
+}
+
+/**
+ * @brief Set a region of a tensor's device memory to a specified value.
+ *
+ * @param buffer The CANN buffer containing the tensor.
+ * @param tensor Pointer to the tensor whose memory will be set.
+ * @param value The value to which each byte in the region will be set.
+ * @param offset Byte offset within the tensor's data to start setting.
+ * @param size Number of bytes to set.
+ */
+static void ggml_backend_cann_buffer_memset_tensor(ggml_backend_buffer_t buffer, ggml_tensor * tensor, uint8_t value, size_t offset, size_t size) {
+    ggml_backend_cann_buffer_context * ctx = (ggml_backend_cann_buffer_context *) buffer->context;
+
+    ggml_cann_set_device(ctx->device);
+    ACL_CHECK(aclrtMemset((char *) tensor->data + offset, size, value, size));
 }
 
 /**
@@ -1454,12 +1471,17 @@ static const ggml_backend_buffer_i ggml_backend_cann_buffer_interface = {
     /* .free_buffer     = */ ggml_backend_cann_buffer_free_buffer,
     /* .get_base        = */ ggml_backend_cann_buffer_get_base,
     /* .init_tensor     = */ ggml_backend_cann_buffer_init_tensor,
-    /* .memset_tensor   = */ NULL,
+    /* .memset_tensor   = */ ggml_backend_cann_buffer_memset_tensor,
     /* .set_tensor      = */ ggml_backend_cann_buffer_set_tensor,
     /* .get_tensor      = */ ggml_backend_cann_buffer_get_tensor,
+    /* .set_tensor_2d   = */ NULL,
+    /* .get_tensor_2d   = */ NULL,
     /* .cpy_tensor      = */ ggml_backend_cann_buffer_cpy_tensor,
     /* .clear           = */ ggml_backend_cann_buffer_clear,
     /* .reset           = */ NULL,
+    /* .set_tensor_n    = */ NULL,
+    /* .get_tensor_n    = */ NULL,
+    /* .cpy_tensor_n    = */ NULL,
 };
 
 /**
@@ -1577,12 +1599,14 @@ static bool ggml_backend_cann_buffer_type_is_host(ggml_backend_buffer_type_t buf
  * memory for CANN buffer types in the GGML backend.
  */
 static const ggml_backend_buffer_type_i ggml_backend_cann_buffer_type_interface = {
-    /* .get_name         = */ ggml_backend_cann_buffer_type_name,
-    /* .alloc_buffer     = */ ggml_backend_cann_buffer_type_alloc_buffer,
-    /* .get_alignment    = */ ggml_backend_cann_buffer_type_get_alignment,
-    /* .get_max_size     = */ NULL,  // defaults to SIZE_MAX
-    /* .get_alloc_size   = */ ggml_backend_cann_buffer_type_get_alloc_size,
-    /* .is_host          = */ ggml_backend_cann_buffer_type_is_host,
+    /* .get_name            = */ ggml_backend_cann_buffer_type_name,
+    /* .alloc_buffer        = */ ggml_backend_cann_buffer_type_alloc_buffer,
+    /* .alloc_buffer_n      = */ NULL,
+    /* .get_alignment       = */ ggml_backend_cann_buffer_type_get_alignment,
+    /* .get_max_size        = */ NULL,  // defaults to SIZE_MAX
+    /* .get_alloc_size      = */ ggml_backend_cann_buffer_type_get_alloc_size,
+    /* .get_alloc_size_n    = */ NULL,
+    /* .is_host             = */ ggml_backend_cann_buffer_type_is_host,
 };
 
 /**
@@ -1724,12 +1748,14 @@ static ggml_backend_buffer_t ggml_backend_cann_host_buffer_type_alloc_buffer(ggm
 ggml_backend_buffer_type_t ggml_backend_cann_host_buffer_type() {
     static struct ggml_backend_buffer_type ggml_backend_cann_buffer_type_host = {
         /* .iface    = */ {
-                           /* .get_name         = */ ggml_backend_cann_host_buffer_type_name,
-                           /* .alloc_buffer     = */ ggml_backend_cann_host_buffer_type_alloc_buffer,
-                           /* .get_alignment    = */ ggml_backend_cpu_buffer_type()->iface.get_alignment,
-                           /* .get_max_size     = */ NULL,  // defaults to SIZE_MAX
-            /* .get_alloc_size   = */ ggml_backend_cpu_buffer_type()->iface.get_alloc_size,
-                           /* .is_host          = */ ggml_backend_cpu_buffer_type()->iface.is_host,
+                           /* .get_name             = */ ggml_backend_cann_host_buffer_type_name,
+                           /* .alloc_buffer         = */ ggml_backend_cann_host_buffer_type_alloc_buffer,
+                           /* .alloc_buffer_n       = */ NULL,
+                           /* .get_alignment        = */ ggml_backend_cpu_buffer_type()->iface.get_alignment,
+                           /* .get_max_size         = */ NULL,  // defaults to SIZE_MAX
+                           /* .get_alloc_size       = */ ggml_backend_cpu_buffer_type()->iface.get_alloc_size,
+                           /* .get_alloc_size_n     = */ NULL,
+                           /* .is_host              = */ ggml_backend_cpu_buffer_type()->iface.is_host,
                            },
         /* .device   = */
         ggml_backend_reg_dev_get(ggml_backend_cann_reg(), 0),
@@ -1767,7 +1793,6 @@ static bool ggml_cann_compute_forward(ggml_backend_cann_context & ctx, struct gg
             ggml_cann_dup(ctx, dst);
             break;
         case GGML_OP_ADD:
-        case GGML_OP_ADD1:
             ggml_cann_binary_op<aclnn_add>(ctx, dst);
             break;
         case GGML_OP_SUB:
@@ -1833,6 +1858,9 @@ static bool ggml_cann_compute_forward(ggml_backend_cann_context & ctx, struct gg
                 case GGML_UNARY_OP_STEP:
                     ggml_cann_step(ctx, dst);
                     break;
+                case GGML_UNARY_OP_SOFTPLUS:
+                    ggml_cann_softplus(ctx, dst);
+                    break;
                 default:
                     return false;
             }
@@ -1843,20 +1871,19 @@ static bool ggml_cann_compute_forward(ggml_backend_cann_context & ctx, struct gg
                     GGML_CANN_CALL_OP_UNARY_GATED(Relu);
                     break;
                 case GGML_GLU_OP_GEGLU:
+                    ggml_cann_geglu(ctx, dst, 0);  // approximate=0 → tanh
+                    break;
                 case GGML_GLU_OP_GEGLU_ERF:
-                    // aclnnGelu internally uses the erf-based approximation.
-                    GGML_CANN_CALL_OP_UNARY_GATED(Gelu);
+                    ggml_cann_geglu(ctx, dst, 1);  // approximate=1 → erf
                     break;
                 case GGML_GLU_OP_SWIGLU:
-                    GGML_CANN_CALL_OP_UNARY_GATED(Silu);
+                    ggml_cann_swiglu(ctx, dst);
+                    break;
+                case GGML_GLU_OP_SWIGLU_CLAMP:
+                    ggml_cann_swiglu_clamp(ctx, dst);
                     break;
                 case GGML_GLU_OP_GEGLU_QUICK:
-                    {
-                        auto lambda = [](ggml_backend_cann_context & ctx, aclTensor * acl_src, aclTensor * acl_dst) {
-                            GGML_CANN_CALL_ACLNN_OP(ctx, GeluV2, acl_src, 0, acl_dst);
-                        };
-                        ggml_cann_op_unary_gated(lambda, ctx, dst);
-                    }
+                    ggml_cann_geglu_quick(ctx, dst);
                     break;
                 default:
                     return false;
@@ -1918,6 +1945,9 @@ static bool ggml_cann_compute_forward(ggml_backend_cann_context & ctx, struct gg
         case GGML_OP_CPY:
             ggml_cann_cpy(ctx, dst);
             break;
+        case GGML_OP_SET:
+            ggml_cann_set(ctx, dst);
+            break;
         case GGML_OP_CONT:
             ggml_cann_dup(ctx, dst);
             break;
@@ -1926,9 +1956,6 @@ static bool ggml_cann_compute_forward(ggml_backend_cann_context & ctx, struct gg
         case GGML_OP_VIEW:
         case GGML_OP_PERMUTE:
         case GGML_OP_TRANSPOSE:
-            break;
-        case GGML_OP_DIAG_MASK_INF:
-            ggml_cann_diag_mask(ctx, dst, -INFINITY);
             break;
         case GGML_OP_SOFT_MAX:
             ggml_cann_softmax(ctx, dst);
@@ -1986,6 +2013,21 @@ static bool ggml_cann_compute_forward(ggml_backend_cann_context & ctx, struct gg
             break;
         case GGML_OP_SSM_CONV:
             ggml_cann_ssm_conv(ctx, dst);
+            break;
+        case GGML_OP_CUMSUM:
+            ggml_cann_cumsum(ctx, dst);
+            break;
+        case GGML_OP_TRI:
+            ggml_cann_tri(ctx, dst);
+            break;
+        case GGML_OP_FILL:
+            ggml_cann_fill(ctx, dst);
+            break;
+        case GGML_OP_DIAG:
+            ggml_cann_diag(ctx, dst);
+            break;
+        case GGML_OP_SOLVE_TRI:
+            ggml_cann_solve_tri(ctx, dst);
             break;
         default:
             return false;
@@ -2322,6 +2364,7 @@ static enum ggml_status ggml_backend_cann_graph_compute(ggml_backend_t backend, 
     if (use_cann_graph) {
         // If no matching graph is found, the graph needs to be recaptured.
         graph_capture_required = !cann_ctx->graph_lru_cache.find_and_move_to_front(cgraph);
+
         if (graph_capture_required) {
             // If no matching graph is found, add a new ACL graph.
             ggml_cann_graph * new_graph = ggml_cann_graph::create_from_cgraph(cgraph);
@@ -2380,6 +2423,7 @@ static bool ggml_backend_cann_supports_op(ggml_backend_dev_t dev, const ggml_ten
                 case GGML_UNARY_OP_SGN:
                 case GGML_UNARY_OP_STEP:
                 case GGML_UNARY_OP_GELU_ERF:
+                case GGML_UNARY_OP_SOFTPLUS:
                     return true;
                 default:
                     return false;
@@ -2391,6 +2435,7 @@ static bool ggml_backend_cann_supports_op(ggml_backend_dev_t dev, const ggml_ten
                 case GGML_GLU_OP_SWIGLU:
                 case GGML_GLU_OP_GEGLU_ERF:
                 case GGML_GLU_OP_GEGLU_QUICK:
+                case GGML_GLU_OP_SWIGLU_CLAMP:
                     return true;
                 default:
                     return false;
@@ -2398,21 +2443,27 @@ static bool ggml_backend_cann_supports_op(ggml_backend_dev_t dev, const ggml_ten
             break;
         case GGML_OP_MUL_MAT:
             {
+                if (ggml_prec_get_src(op, 1) == GGML_PREC_BF16 || ggml_prec_get_src(op, 1) == GGML_PREC_F32) {
+                    return false;
+                }
                 switch (op->src[0]->type) {
 #ifndef ASCEND_310P
                     case GGML_TYPE_BF16:
+                        return true;
 #endif
                     case GGML_TYPE_F16:
                     case GGML_TYPE_F32:
-                        return true;
+                        // src1 goes to aclnn as is: a BF16 src1 with F16/F32 weights is not verified
+                        return op->src[1]->type != GGML_TYPE_BF16;
                     case GGML_TYPE_Q8_0:
                     case GGML_TYPE_Q4_0:
 #ifdef ASCEND_310P
                         // Q4 && Q8 per group is not support on 310p device
                         return false;
-#endif
+#else
                         // only support contiguous for quantized types.
                         return ggml_is_contiguous(op->src[0]) && ggml_is_contiguous(op->src[1]);
+#endif
                     default:
                         return false;
                 }
@@ -2421,15 +2472,17 @@ static bool ggml_backend_cann_supports_op(ggml_backend_dev_t dev, const ggml_ten
             switch (op->src[0]->type) {
                 case GGML_TYPE_F16:
                 case GGML_TYPE_F32:
-                    return true;
+                    // src1 goes to aclnn as is: a BF16 src1 with F16/F32 weights is not verified
+                    return op->src[1]->type != GGML_TYPE_BF16;
                 case GGML_TYPE_Q8_0:
                 case GGML_TYPE_Q4_0:
 #ifdef ASCEND_310P
                     // Q4 && Q8 per group is not support on 310p device
                     return false;
-#endif
+#else
                     // only support contiguous for quantized types.
                     return ggml_is_contiguous(op->src[0]) && ggml_is_contiguous(op->src[1]);
+#endif
                 default:
                     return false;
             }
@@ -2451,6 +2504,9 @@ static bool ggml_backend_cann_supports_op(ggml_backend_dev_t dev, const ggml_ten
             break;
         case GGML_OP_SET_ROWS:
             {
+                if (op->src[0]->type == GGML_TYPE_BF16) {
+                    return false;
+                }
                 switch (op->type) {
                     case GGML_TYPE_F32:
                     case GGML_TYPE_F16:
@@ -2497,6 +2553,15 @@ static bool ggml_backend_cann_supports_op(ggml_backend_dev_t dev, const ggml_ten
             }
         case GGML_OP_ROPE:
             {
+                if (!ggml_rope_get_truncate(op)) {
+                    return false;
+                }
+                if (((const int32_t *) op->op_params)[15] != 0) {
+                    return false; // FIXME: support ggml_rope_set_offset
+                }
+                if (op->src[0]->type != GGML_TYPE_F32 && op->src[0]->type != GGML_TYPE_F16) {
+                    return false;
+                }
                 if (op->src[0]->ne[0] > 896) {
                     return false;
                 }
@@ -2545,6 +2610,9 @@ static bool ggml_backend_cann_supports_op(ggml_backend_dev_t dev, const ggml_ten
             }
         case GGML_OP_SUM:
             return ggml_is_contiguous_rows(op->src[0]);
+        case GGML_OP_RMS_NORM:
+            // the cached gamma of ones does not track its type, so F32 and BF16 can not share it
+            return op->src[0]->type != GGML_TYPE_BF16;
         case GGML_OP_L2_NORM:
         case GGML_OP_CROSS_ENTROPY_LOSS:
         case GGML_OP_DUP:
@@ -2558,18 +2626,16 @@ static bool ggml_backend_cann_supports_op(ggml_backend_dev_t dev, const ggml_ten
         case GGML_OP_TRANSPOSE:
         case GGML_OP_NORM:
         case GGML_OP_ADD:
-        case GGML_OP_ADD1:
         case GGML_OP_SUB:
         case GGML_OP_MUL:
         case GGML_OP_DIV:
-        case GGML_OP_RMS_NORM:
         case GGML_OP_SQR:
         case GGML_OP_SQRT:
         case GGML_OP_CLAMP:
-        case GGML_OP_DIAG_MASK_INF:
         case GGML_OP_SUM_ROWS:
         case GGML_OP_ARGSORT:
         case GGML_OP_ACC:
+        case GGML_OP_SET:
         case GGML_OP_GROUP_NORM:
             return true;
         case GGML_OP_PAD:
@@ -2592,7 +2658,7 @@ static bool ggml_backend_cann_supports_op(ggml_backend_dev_t dev, const ggml_ten
 #ifdef ASCEND_310P
                 // Ger is not supported on 310p device
                 return false;
-#endif
+#else
                 switch (op->src[0]->type) {
                     case GGML_TYPE_F16:
                     case GGML_TYPE_F32:
@@ -2600,6 +2666,7 @@ static bool ggml_backend_cann_supports_op(ggml_backend_dev_t dev, const ggml_ten
                     default:
                         return false;
                 }
+#endif
             }
         case GGML_OP_CONV_TRANSPOSE_1D:
             return true;
@@ -2615,10 +2682,14 @@ static bool ggml_backend_cann_supports_op(ggml_backend_dev_t dev, const ggml_ten
             return true;
         case GGML_OP_FLASH_ATTN_EXT:
             {
+                // K/V row lists and indexed bias are not supported
+                if (op->src[5] != nullptr || ggml_flash_attn_ext_has_indexed_bias(op)) {
+                    return false;
+                }
 #ifdef ASCEND_310P
                 // FA not support on 310p device
                 return false;
-#endif
+#else
                 // derived from [ggml-cuda.cu]
                 if (op->src[1]->type != GGML_TYPE_F16 || op->src[2]->type != GGML_TYPE_F16) {
                     return false;
@@ -2644,9 +2715,20 @@ static bool ggml_backend_cann_supports_op(ggml_backend_dev_t dev, const ggml_ten
                     return false;
                 }
                 return true;
+#endif
             }
         case GGML_OP_SSM_CONV:
             return true;
+        case GGML_OP_CUMSUM:
+            return op->src[0]->type == GGML_TYPE_F32;
+        case GGML_OP_TRI:
+            return op->src[0]->type == GGML_TYPE_F32;
+        case GGML_OP_FILL:
+            return op->src[0]->type == GGML_TYPE_F32;
+        case GGML_OP_DIAG:
+            return op->src[0]->type == GGML_TYPE_F32;
+        case GGML_OP_SOLVE_TRI:
+            return op->src[0]->type == GGML_TYPE_F32;
         default:
             return false;
     }
@@ -2698,6 +2780,8 @@ static const ggml_backend_i ggml_backend_cann_interface = {
     /* .free                    = */ ggml_backend_cann_free,
     /* .set_tensor_async        = */ ggml_backend_cann_set_tensor_async,
     /* .get_tensor_async        = */ ggml_backend_cann_get_tensor_async,
+    /* .set_tensor_2d_async     = */ NULL,
+    /* .get_tensor_2d_async     = */ NULL,
     /* .cpy_tensor_async        = */ ggml_backend_cann_cpy_tensor_async,
     /* .synchronize             = */ ggml_backend_cann_synchronize,
     /* .graph_plan_create       = */ NULL,
@@ -2765,6 +2849,8 @@ static void ggml_backend_cann_device_get_props(ggml_backend_dev_t dev, ggml_back
         /* .host_buffer           = */ host_buffer,
         /* .buffer_from_host_ptr  = */ false,
         /* .events                = */ true,
+        /* .mmap_support          = */ true,
+        /* .fast_async_host_input = */ false,
     };
 }
 
@@ -2788,12 +2874,13 @@ static ggml_backend_t ggml_backend_cann_device_init(ggml_backend_dev_t dev, cons
  *              otherwise false.
  */
 static bool ggml_backend_cann_supports_buft(ggml_backend_dev_t dev, ggml_backend_buffer_type_t buft) {
-    if (ggml_backend_buft_is_cann(buft)) {
-        ggml_backend_cann_device_context *      dev_ctx  = (ggml_backend_cann_device_context *) dev->context;
-        ggml_backend_cann_buffer_type_context * buft_ctx = (ggml_backend_cann_buffer_type_context *) buft->context;
-        return buft_ctx->device == dev_ctx->device;
+    if (!ggml_backend_buft_is_cann(buft)) {
+        return false;
     }
-    return false;
+
+    ggml_backend_cann_device_context *      dev_ctx  = (ggml_backend_cann_device_context *) dev->context;
+    ggml_backend_cann_buffer_type_context * buft_ctx = (ggml_backend_cann_buffer_type_context *) buft->context;
+    return buft_ctx->device == dev_ctx->device;
 }
 
 static ggml_backend_buffer_type_t ggml_backend_cann_device_get_buffer_type(ggml_backend_dev_t dev) {
