@@ -4,6 +4,7 @@ import type {
 } from '@ggml-org/llama-ui/models';
 import type { ModelSidecar } from '#lib/constants/model-id.constants.ts';
 import type { ApiModelDataEntry, ApiModelDetails, ApiModelLoadStage } from '#lib/types/api.js';
+import type { OpenAiConnectionContext } from '#lib/utils/api-target.ts';
 
 export type { ModelModalities } from '@ggml-org/llama-ui/models';
 
@@ -16,6 +17,8 @@ export interface ModelOption {
 	id: string;
 	name: string;
 	model: string;
+	/** When set, chat/completions and auth for this row use this OpenAI-compatible server. */
+	openAiConnection?: OpenAiConnectionContext;
 	description?: string;
 	capabilities: string[];
 	/** Context size reported by the provider's model listing, when it reports one. */

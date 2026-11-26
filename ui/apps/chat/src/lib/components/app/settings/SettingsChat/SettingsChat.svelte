@@ -22,6 +22,7 @@
 	import { agenticMode } from '#lib/stores/agentic-mode.svelte.ts';
 	import { deviceStore, modelsStore, serverStore, settingsStore } from '#lib/stores/index.ts';
 	import type { SettingsSection, SettingsSectionTitle } from '#lib/types/index.ts';
+	import { normalizeOpenAiApiBaseUrl } from '#lib/utils/api-target.ts';
 	import { isSettingShownOn } from '#lib/utils/index.ts';
 	import { setMode } from 'mode-watcher';
 	import { tick } from 'svelte';
@@ -136,6 +137,14 @@
 	}
 
 	function handleSave() {
+		const prevOpenAi = {
+			base: String(localConfig[SETTINGS_KEYS.OPEN_AI_API_BASE_URL] ?? ''),
+			proxy: Boolean(localConfig[SETTINGS_KEYS.OPEN_AI_API_USE_CORS_PROXY]),
+			custom: String(localConfig[SETTINGS_KEYS.OPEN_AI_CUSTOM_MODELS] ?? ''),
+			managed: String(localConfig[SETTINGS_KEYS.OPEN_AI_MANAGED_MODELS] ?? ''),
+			profiles: String(localConfig[SETTINGS_KEYS.OPEN_AI_SERVER_PROFILES] ?? '')
+		};
+
 		if (
 			localConfig.customJson &&
 			typeof localConfig.customJson === 'string' &&
@@ -152,6 +161,21 @@
 		}
 
 		const processedConfig = { ...localConfig };
+
+		// the base URL is stored normalized, so a bare origin gains its /v1 once
+		try {
+			const baseStr = processedConfig[SETTINGS_KEYS.OPEN_AI_API_BASE_URL];
+			if (typeof baseStr === 'string' && baseStr.trim()) {
+				processedConfig[SETTINGS_KEYS.OPEN_AI_API_BASE_URL] = normalizeOpenAiApiBaseUrl(baseStr);
+				new URL(String(processedConfig[SETTINGS_KEYS.OPEN_AI_API_BASE_URL]));
+			} else {
+				processedConfig[SETTINGS_KEYS.OPEN_AI_API_BASE_URL] = '';
+			}
+		} catch {
+			alert('Invalid OpenAI-compatible API base URL. Use http:// or https:// with a valid host.');
+
+			return;
+		}
 
 		for (const field of NUMERIC_FIELDS) {
 			if (processedConfig[field] !== undefined && processedConfig[field] !== '') {
@@ -178,6 +202,20 @@
 		}
 
 		settingsStore.updateMultipleConfig(processedConfig);
+
+		// the model list follows the endpoint: refetch when any OpenAI setting moved
+		if (
+			prevOpenAi.base !== String(processedConfig[SETTINGS_KEYS.OPEN_AI_API_BASE_URL] ?? '') ||
+			prevOpenAi.proxy !== Boolean(processedConfig[SETTINGS_KEYS.OPEN_AI_API_USE_CORS_PROXY]) ||
+			prevOpenAi.custom !== String(processedConfig[SETTINGS_KEYS.OPEN_AI_CUSTOM_MODELS] ?? '') ||
+			prevOpenAi.managed !== String(processedConfig[SETTINGS_KEYS.OPEN_AI_MANAGED_MODELS] ?? '') ||
+			prevOpenAi.profiles !== String(processedConfig[SETTINGS_KEYS.OPEN_AI_SERVER_PROFILES] ?? '')
+		) {
+			modelsStore
+				.fetch(true)
+				.catch((err) => console.warn('Failed to refresh models after API settings change', err));
+		}
+
 		onClose?.();
 	}
 

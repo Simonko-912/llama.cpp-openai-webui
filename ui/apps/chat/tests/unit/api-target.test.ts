@@ -1,15 +1,22 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
+// Guards OpenAI-compatible server support: base URL normalization, path mapping,
+// and the settings parsing behind managed models / server profiles.
 
-vi.mock('$app/environment', () => ({ browser: true }));
-vi.mock('$app/paths', () => ({ base: '' }));
+import { describe, expect, it, vi } from 'vitest';
 
-const mockConfig = vi.fn(() => ({
+vi.mock('$app/env', () => ({ browser: true }));
+vi.mock('$app/paths', () => ({ asset: (path: string) => `./${path}` }));
+
+const mockConfig: Record<string, unknown> = {
 	openAiApiBaseUrl: '',
 	openAiApiUseCorsProxy: false
-}));
+};
 
-vi.mock('$lib/stores/settings.svelte', () => ({
-	config: () => mockConfig()
+vi.mock('#lib/stores/settings/index.svelte.ts', () => ({
+	settingsStore: {
+		get config() {
+			return mockConfig;
+		}
+	}
 }));
 
 import {
@@ -20,7 +27,7 @@ import {
 	parseOpenAiServerProfilesFromConfig,
 	serializeOpenAiManagedModels,
 	legacyOpenAiCustomModelsTextFromManaged
-} from '$lib/utils/api-target';
+} from '#lib/utils/api-target.ts';
 
 describe('normalizeOpenAiApiBaseUrl', () => {
 	it('appends /v1 when only origin is given', () => {

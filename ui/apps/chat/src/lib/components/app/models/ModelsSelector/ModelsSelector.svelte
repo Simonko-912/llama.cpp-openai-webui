@@ -17,6 +17,7 @@
 		SETTINGS_KEYS
 	} from '#lib/constants/index.ts';
 	import { KeyboardKey, ServerModelStatus } from '#lib/enums/index.ts';
+	import { customModelsDialogStore } from '#lib/stores/custom-models-dialog.svelte.ts';
 	import { useChatFormModel } from '#lib/hooks/use-chat-form-model.svelte.ts';
 	import { useModelsSelector } from '#lib/hooks/use-models-selector.svelte.ts';
 	import {
@@ -276,16 +277,26 @@
 		Loading models...
 	</div>
 {:else if ms.options.length === 0 && ms.isMultiModel}
-	{#if displayModel}
-		<span
-			class="inline-flex items-center gap-1.5 rounded-sm bg-muted-foreground/10 px-1.5 py-1 text-caption text-muted-foreground"
-			style="max-width: min(calc(100cqw - 10rem), 48rem)"
+	<div class="flex max-w-[16rem] flex-col items-end gap-1 text-right">
+		{#if displayModel}
+			<span
+				class="inline-flex items-center gap-1.5 rounded-sm bg-muted-foreground/10 px-1.5 py-1 text-caption text-muted-foreground"
+				style="max-width: min(calc(100cqw - 10rem), 48rem)"
+			>
+				<MODEL_ICON class="size-icon-sm shrink-0" />
+			</span>
+		{:else}
+			<span class="text-caption text-muted-foreground">No models yet.</span>
+		{/if}
+
+		<button
+			class="text-caption font-medium text-primary underline-offset-2 hover:underline"
+			type="button"
+			onclick={() => customModelsDialogStore.open()}
 		>
-			<MODEL_ICON class="size-icon-sm shrink-0" />
-		</span>
-	{:else}
-		<span class="text-caption text-muted-foreground">No models yet.</span>
-	{/if}
+			Manage API servers...
+		</button>
+	</div>
 {:else if ms.isMultiModel}
 	{#if isMobile}
 		<button

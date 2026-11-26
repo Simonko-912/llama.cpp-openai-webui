@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Button } from '@ggml-org/llama-ui/ui/button';
-	import { LoaderCircle, SkipForward, Square } from '@lucide/svelte';
+	import { ListPlus, LoaderCircle, SkipForward, Square } from '@lucide/svelte';
 	import {
 		ChatFormActionRecord,
 		ChatFormActionsAdd,
@@ -14,6 +14,7 @@
 		VOICE_MODE_MESSAGE
 	} from '#lib/constants/index.ts';
 	import { setChatFormActionsContext } from '#lib/contexts/index.ts';
+	import { customModelsDialogStore } from '#lib/stores/custom-models-dialog.svelte.ts';
 	import { useChatFormModel } from '#lib/hooks/use-chat-form-model.svelte.ts';
 	import { useShowContextGauge } from '#lib/hooks/use-context-gauge.svelte.ts';
 	import { ChatService } from '#lib/services/index.ts';
@@ -172,6 +173,21 @@
 	{/if}
 
 	<div class="flex items-center gap-1.5">
+		<!-- one entry point for the OpenAI-compatible servers dialog, next to the picker -->
+		<Button
+			class="size-8 shrink-0"
+			disabled={disabled}
+			onclick={() => customModelsDialogStore.open()}
+			title="Manage OpenAI-compatible API servers"
+			type="button"
+			variant="outline"
+			size="icon"
+		>
+			<span class="sr-only">Manage API servers</span>
+
+			<ListPlus class="size-icon-sm" />
+		</Button>
+
 		<!-- a phone shows the gauge pinned to the chat screen's top right instead -->
 		{#if showContextGauge.current && !deviceStore.isMobile}
 			<ChatFormContextGauge />

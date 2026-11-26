@@ -45,7 +45,11 @@ import type {
 import type { OpenAIToolDefinition } from '#lib/types/mcp.js';
 import { isAbortError } from '#lib/utils/abort.ts';
 import { ApiError } from '#lib/utils/api-fetch.ts';
-import { getAuthHeaders, getJsonHeaders } from '#lib/utils/api-headers.ts';
+import { getAuthHeaders, getJsonHeaders, getJsonHeadersWithOpenAiKey } from '#lib/utils/api-headers.ts';
+import {
+	prepareOpenAiFetch,
+	prepareOpenAiFetchWithContext
+} from '#lib/utils/api-target.ts';
 import { formatAttachmentText } from '#lib/utils/formatters.ts';
 import {
 	audioContentPart,
@@ -1311,9 +1315,23 @@ export class ChatService {
 				ChatService.saveStreamState(conversationId, 0, options.model ?? null);
 			}
 
-			const response = await fetch(API_CHAT.COMPLETIONS, {
+			// a model that came from an OpenAI-compatible server profile routes its
+			// completions to that server, with its own key; otherwise the call stays
+			// on this llama-server and keeps the headers built above
+			const modelName = options.model ?? '';
+			const openAiCtx = modelName
+				? modelsStore.getOpenAiConnectionForModel(modelName)
+				: undefined;
+			const headerBase = openAiCtx
+				? { ...getJsonHeadersWithOpenAiKey(openAiCtx.apiKey), ...headers }
+				: headers;
+			const target = openAiCtx
+				? prepareOpenAiFetchWithContext('chat/completions', headerBase, openAiCtx)
+				: prepareOpenAiFetch('chat/completions', headerBase);
+
+			const response = await fetch(target.url, {
 				body: JSON.stringify(requestBody),
-				headers,
+				headers: target.headers,
 				method: 'POST',
 				signal
 			});

@@ -22,11 +22,24 @@ import { ModelsService } from '#lib/services/models.service.ts';
 // direct imports between stores, not via the barrel, to avoid circular deps
 import { conversationsStore } from '#lib/stores/conversations/index.svelte.ts';
 import { serverStore } from '#lib/stores/llama-server.svelte.ts';
+import { settingsStore } from '#lib/stores/settings/index.svelte.ts';
 import { type ModelPropsHost, ModelPropsManager } from '#lib/stores/models/props.svelte.ts';
 import { type ModelStatusHost, ModelStatusManager } from '#lib/stores/models/status.svelte.ts';
-import type { ApiModelDataEntry } from '#lib/types/index.ts';
+import type { ApiModelDataEntry, ApiModelDetails, ApiModelsListResponse } from '#lib/types/index.ts';
 import type { ParsedModelId } from '#lib/types/models.js';
 import { getConversationModel } from '#lib/utils/conversation-utils.ts';
+import {
+	buildGlobalOpenAiConnectionFromConfig,
+	getSameOriginOpenAiRoot,
+	isRemoteOpenAiApi,
+	openAiConnectionFetchKey,
+	openAiRootsEffectivelyEqual,
+	parseOpenAiManagedModelsFromConfig,
+	parseOpenAiServerProfilesFromConfig,
+	resolveOpenAiConnectionForProfile,
+	type OpenAiConnectionContext,
+	type OpenAiManagedModelEntry
+} from '#lib/utils/api-target.ts';
 import { repoOf } from '#lib/utils/model-names.ts';
 import { browser } from '$app/env';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
@@ -121,7 +134,9 @@ class ModelsStore implements ModelPropsHost, ModelStatusHost {
 	 * served model, from the models list or the server props as a fallback.
 	 */
 	get activeModelId(): string | null {
-		if (!serverStore.isRouterMode) {
+		// a remote OpenAI-compatible endpoint has a real model list, so the selection
+		// behaves as on a router instead of collapsing to the first served model
+		if (!serverStore.isRouterMode && !isRemoteOpenAiApi()) {
 			return this.models.length > 0 ? this.models[0].model : this.singleModelName;
 		}
 
@@ -376,9 +391,29 @@ class ModelsStore implements ModelPropsHost, ModelStatusHost {
 	}
 
 	getModelStatus(modelId: string): ServerModelStatus | null {
+		if (this.isExternallyHostedModelId(modelId)) return ServerModelStatus.LOADED;
+
 		const model = this.routerModels.find((m) => m.id === modelId);
 
 		return (model?.status?.value as ServerModelStatus) ?? null;
+	}
+
+	/** Connection used for chat/completions when the request uses this model id. */
+	getOpenAiConnectionForModel(modelName: string): OpenAiConnectionContext | undefined {
+		return this.findModelByName(modelName)?.openAiConnection;
+	}
+
+	/**
+	 * A model that lives on a remote OpenAI-compatible server is always ready on
+	 * that server: the local router's load state does not apply to it.
+	 */
+	private isExternallyHostedModelId(modelId: string): boolean {
+		const opt =
+			this.models.find((m) => m.model === modelId) ?? this.models.find((m) => m.id === modelId);
+		if (opt?.openAiConnection) {
+			return !openAiRootsEffectivelyEqual(opt.openAiConnection.baseUrl, getSameOriginOpenAiRoot());
+		}
+		return Boolean(settingsStore.config.openAiApiBaseUrl?.toString().trim());
 	}
 
 	/**
@@ -589,6 +624,74 @@ class ModelsStore implements ModelPropsHost, ModelStatusHost {
 		return candidate && candidate.trim().length > 0 ? candidate : id;
 	}
 
+	/** Map an OpenAI-compatible listing to options, namespaced by the connection prefix. */
+	private mapOpenAiListToOptions(
+		response: ApiModelsListResponse,
+		ctx: OpenAiConnectionContext,
+		idPrefix: string
+	): ModelOption[] {
+		return response.data.map((item: ApiModelDataEntry, index: number) => {
+			const details = response.models?.[index];
+			const rawCapabilities = Array.isArray(details?.capabilities) ? details?.capabilities : [];
+			const displayNameSource =
+				details?.name && details.name.trim().length > 0 ? details.name : item.id;
+			const modelId = details?.model || item.id;
+
+			return {
+				aliases: item.aliases ?? [],
+				capabilities: rawCapabilities.filter((value: unknown): value is string => Boolean(value)),
+				description: details?.description,
+				details: details?.details,
+				id: idPrefix ? `${idPrefix}:${item.id}` : item.id,
+				meta: item.meta ?? null,
+				model: modelId,
+				name: this.toDisplayName(displayNameSource),
+				openAiConnection: ctx,
+				parsedId: ModelsService.parseModelId(modelId),
+				tags: item.tags ?? []
+			} satisfies ModelOption;
+		});
+	}
+
+	/** Append options not seen yet for their connection; same-origin rows skip the merge. */
+	private mergeModelOptionsSeen(models: ModelOption[], seen: Set<string>, next: ModelOption[]): void {
+		for (const o of next) {
+			if (!o.openAiConnection) continue;
+			const k = `${openAiConnectionFetchKey(o.openAiConnection)}|${o.model}`;
+
+			if (seen.has(k)) continue;
+			seen.add(k);
+			models.push(o);
+		}
+	}
+
+	/** Add a manually managed model id for a connection. */
+	private pushManualModel(
+		models: ModelOption[],
+		seen: Set<string>,
+		ctx: OpenAiConnectionContext,
+		prefix: string,
+		entry: OpenAiManagedModelEntry
+	): void {
+		const mid = entry.id.trim();
+
+		if (!mid) return;
+		const k = `${openAiConnectionFetchKey(ctx)}|${mid}`;
+
+		if (seen.has(k)) return;
+		seen.add(k);
+		models.push({
+			aliases: [],
+			capabilities: [],
+			id: prefix ? `${prefix}:${mid}` : mid,
+			model: mid,
+			name: entry.label?.trim() ? entry.label.trim() : this.toDisplayName(mid),
+			openAiConnection: ctx,
+			parsedId: ModelsService.parseModelId(mid),
+			tags: []
+		});
+	}
+
 	toggleFavorite(modelId: string): void {
 		this.setFavorites([modelId], !this.favoriteModelIds.has(modelId));
 	}
@@ -642,7 +745,7 @@ class ModelsStore implements ModelPropsHost, ModelStatusHost {
 	 */
 	private buildModelOptions(response: ApiModelsListResponse): ModelOption[] {
 		const entries: {
-			details?: ApiModelsListResponse['models'][number];
+			details?: ApiModelDetails;
 			item: ApiModelDataEntry;
 			parsed: ParsedModelId;
 		}[] = response.data.map((item: ApiModelDataEntry, index: number) => ({
@@ -695,11 +798,78 @@ class ModelsStore implements ModelPropsHost, ModelStatusHost {
 				})
 		);
 	}
-	/** Fetch models in MODEL mode (single model, standard OpenAI-compatible). */
+	/**
+	 * Fetch models in MODEL mode: this server's own list first, then the models of
+	 * the configured OpenAI-compatible servers (global base URL, then profiles),
+	 * then the manually managed ids. A failed remote read only drops that source.
+	 */
 	private async fetchModelModeInternal(): Promise<ModelOption[]> {
-		const response = await ModelsService.list();
+		const models: ModelOption[] = [];
+		const seen = new Set<string>();
+		const fetchedConn = new Set<string>();
 
-		return this.buildModelOptions(response);
+		const response = await ModelsService.list();
+		const sameOriginCtx: OpenAiConnectionContext = {
+			baseUrl: getSameOriginOpenAiRoot(),
+			apiKey: settingsStore.config.apiKey?.toString().trim() || undefined,
+			useCorsProxy: Boolean(settingsStore.config.openAiApiUseCorsProxy)
+		};
+		fetchedConn.add(openAiConnectionFetchKey(sameOriginCtx));
+		this.mergeModelOptionsSeen(models, seen, this.buildModelOptions(response));
+
+		const cfgRecord = settingsStore.config as unknown as Record<string, unknown>;
+		const globalCtx = buildGlobalOpenAiConnectionFromConfig();
+		if (globalCtx) {
+			const gk = openAiConnectionFetchKey(globalCtx);
+			if (!fetchedConn.has(gk)) {
+				fetchedConn.add(gk);
+				try {
+					const gr = await ModelsService.listOpenAi(globalCtx);
+					this.mergeModelOptionsSeen(
+						models,
+						seen,
+						this.mapOpenAiListToOptions(gr, globalCtx, 'g')
+					);
+				} catch {
+					// remote list unavailable (offline, strict CORS) — keep same-origin models
+				}
+			}
+		}
+
+		const profiles = parseOpenAiServerProfilesFromConfig(cfgRecord);
+		for (let pi = 0; pi < profiles.length; pi++) {
+			const profile = profiles[pi];
+			const ctx = resolveOpenAiConnectionForProfile(profile, cfgRecord);
+			const prefix = `p${pi}`;
+			const ck = openAiConnectionFetchKey(ctx);
+
+			const sameAsAppLlama = openAiRootsEffectivelyEqual(ctx.baseUrl, sameOriginCtx.baseUrl);
+			if (sameAsAppLlama && ck === openAiConnectionFetchKey(sameOriginCtx)) {
+				for (const entry of profile.models ?? []) {
+					this.pushManualModel(models, seen, ctx, prefix, entry);
+				}
+				continue;
+			}
+
+			if (!fetchedConn.has(ck)) {
+				fetchedConn.add(ck);
+				try {
+					const pr = await ModelsService.listOpenAi(ctx);
+					this.mergeModelOptionsSeen(
+						models,
+						seen,
+						this.mapOpenAiListToOptions(pr, ctx, prefix)
+					);
+				} catch {
+					// profile unreachable — its manually listed ids still show below
+				}
+			}
+			for (const entry of profile.models ?? []) {
+				this.pushManualModel(models, seen, ctx, prefix, entry);
+			}
+		}
+
+		return models;
 	}
 
 	private loadFavoritesFromStorage(): Set<string> {
@@ -758,10 +928,33 @@ class ModelsStore implements ModelPropsHost, ModelStatusHost {
 				this.models = await this.fetchModelModeInternal();
 			}
 		} catch (error) {
-			this.models = [];
-			this.error = error instanceof Error ? error.message : 'Failed to load models';
+			// same-origin list failed outright: keep the manually managed ids at least,
+			// so a configured remote endpoint is still usable offline-first
+			const cfgRecord = settingsStore.config as unknown as Record<string, unknown>;
+			const customEntries = parseOpenAiManagedModelsFromConfig(cfgRecord);
+			const globalCtxFb = buildGlobalOpenAiConnectionFromConfig();
+			const conn: OpenAiConnectionContext =
+				globalCtxFb ?? {
+					baseUrl: getSameOriginOpenAiRoot(),
+					apiKey: settingsStore.config.apiKey?.toString().trim() || undefined,
+					useCorsProxy: Boolean(settingsStore.config.openAiApiUseCorsProxy)
+				};
+			const fallback: ModelOption[] = [];
+			const seenFb = new Set<string>();
+			for (const entry of customEntries) {
+				this.pushManualModel(fallback, seenFb, conn, '', entry);
+			}
+			this.models = fallback;
+			this.error =
+				fallback.length > 0
+					? null
+					: error instanceof Error
+						? error.message
+						: 'Failed to load models';
 
-			throw error;
+			if (fallback.length === 0) {
+				throw error;
+			}
 		} finally {
 			this.loading = false;
 		}

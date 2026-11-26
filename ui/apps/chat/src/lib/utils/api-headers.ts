@@ -25,6 +25,22 @@ export function getJsonHeaders(): Record<string, string> {
 }
 
 /**
+ * JSON headers with Bearer token: explicit key wins, else the global Settings API key.
+ * Used for remote OpenAI-compatible endpoints, where the per-server key differs
+ * from the llama-server --api-key token.
+ */
+export function getJsonHeadersWithOpenAiKey(apiKeyOverride?: string): Record<string, string> {
+	const fromOverride = apiKeyOverride?.toString().trim();
+	const fromGlobal = settingsStore.config.apiKey?.toString().trim();
+	const token = fromOverride || fromGlobal;
+
+	return {
+		[HEADERS.CONTENT_TYPE]: MimeTypeApplication.JSON,
+		...(token ? { [HEADERS.AUTHORIZATION]: `${HEADERS.BEARER}${token}` } : {})
+	};
+}
+
+/**
  * Sanitize HTTP headers by redacting sensitive values.
  * Known sensitive headers (from HEADERS.REDACTED) and any extra headers
  * specified by the caller are fully redacted. Headers listed in

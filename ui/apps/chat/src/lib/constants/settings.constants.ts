@@ -88,11 +88,49 @@ export const SETTINGS_REGISTRY: SettingsSectionEntry[] = [
 			},
 			{
 				defaultValue: '',
-				help: `Set the API Key if you are using <code> ${CLI_FLAGS.API_KEY} </code> option for the server.`,
+				help: `Set the API Key if you are using <code> ${CLI_FLAGS.API_KEY} </code> option for the server. Also used as the Bearer token for remote OpenAI-compatible endpoints below.`,
 				isPrivate: true,
 				key: SETTINGS_KEYS.API_KEY,
 				label: 'API Key',
 				type: SettingsFieldType.INPUT
+			},
+			{
+				defaultValue: '',
+				help: 'Optional. Full base URL for OpenAI-compatible HTTP APIs, including <code>/v1</code> (e.g. <code>https://api.openai.com/v1</code> or <code>http://127.0.0.1:1234/v1</code>). Leave empty to use the same host as this web UI (llama-server). Add model names that are not returned by <code>GET /v1/models</code> with <strong>Manage models</strong> next to the model picker.',
+				key: SETTINGS_KEYS.OPEN_AI_API_BASE_URL,
+				label: 'OpenAI-compatible API base URL',
+				type: SettingsFieldType.INPUT
+			},
+			{
+				defaultValue: false,
+				help: 'When using a remote base URL, route requests through this site\'s <code>/cors-proxy</code> so the browser can reach cross-origin APIs.',
+				key: SETTINGS_KEYS.OPEN_AI_API_USE_CORS_PROXY,
+				label: 'Use server CORS proxy for remote API',
+				type: SettingsFieldType.CHECKBOX
+			},
+			{
+				defaultValue: '',
+				help: 'Legacy newline/comma list of model ids, kept in sync by the Manage servers dialog.',
+				key: SETTINGS_KEYS.OPEN_AI_CUSTOM_MODELS,
+				label: 'Custom OpenAI model ids',
+				standaloneField: false,
+				type: SettingsFieldType.TEXTAREA
+			},
+			{
+				defaultValue: '[]',
+				help: 'JSON list of managed model entries, synced with the server profiles.',
+				key: SETTINGS_KEYS.OPEN_AI_MANAGED_MODELS,
+				label: 'Managed OpenAI models',
+				standaloneField: false,
+				type: SettingsFieldType.TEXTAREA
+			},
+			{
+				defaultValue: '[]',
+				help: 'JSON list of OpenAI-compatible server profiles (name, base URL, API key, CORS proxy, models), edited in the Manage servers dialog.',
+				key: SETTINGS_KEYS.OPEN_AI_SERVER_PROFILES,
+				label: 'OpenAI server profiles',
+				standaloneField: false,
+				type: SettingsFieldType.TEXTAREA
 			},
 			{
 				defaultValue: '',

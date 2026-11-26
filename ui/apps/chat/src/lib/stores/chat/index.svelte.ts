@@ -57,6 +57,7 @@ import {
 	formatCwdMessage,
 	getConversationModel,
 	isAbortError,
+	isRemoteOpenAiApi,
 	normalizeModelName,
 	sliceAtLastCompaction
 } from '#lib/utils/index.ts';
@@ -447,7 +448,7 @@ class ChatStore implements ChatStreamHost, ChatFlowsHost {
 			value !== undefined && value !== null && value !== '';
 		const apiOptions: Record<string, unknown> = { stream: true, timings_per_token: true };
 
-		if (serverStore.isRouterMode) {
+		if (serverStore.isRouterMode || isRemoteOpenAiApi()) {
 			const modelName = modelsStore.selectedModelName;
 
 			if (modelName) apiOptions.model = modelName;
@@ -984,7 +985,7 @@ class ChatStore implements ChatStreamHost, ChatFlowsHost {
 		// and reattach all agree, regardless of fresh send vs regenerate passing a resolved model
 		let effectiveModel: string | null | undefined = undefined;
 
-		if (serverStore.isRouterMode) {
+		if (serverStore.isRouterMode || isRemoteOpenAiApi()) {
 			const conversationModel = getConversationModel(allMessages);
 
 			effectiveModel = modelOverride || modelsStore.selectedModelName || conversationModel;
@@ -1227,7 +1228,7 @@ class ChatStore implements ChatStreamHost, ChatFlowsHost {
 
 				if (onComplete) onComplete(streamedContent);
 
-				if (serverStore.isRouterMode) modelsStore.fetchRouterModels().catch(console.error);
+				if (serverStore.isRouterMode && !isRemoteOpenAiApi()) modelsStore.fetchRouterModels().catch(console.error);
 
 				// Pre-encode conversation in KV cache for faster next turn
 				if (settingsStore.config.preEncodeConversation) {
@@ -1370,7 +1371,7 @@ class ChatStore implements ChatStreamHost, ChatFlowsHost {
 
 					if (onComplete) await onComplete(content);
 
-					if (serverStore.isRouterMode) modelsStore.fetchRouterModels().catch(console.error);
+					if (serverStore.isRouterMode && !isRemoteOpenAiApi()) modelsStore.fetchRouterModels().catch(console.error);
 
 					// Generate LLM based title for new conversations (avoids stale reference
 					// issue when user switches conversations while streaming)

@@ -8,8 +8,35 @@
  */
 
 // API utilities
-export { getAuthHeaders, getJsonHeaders, sanitizeHeaders } from './api-headers';
+export { getAuthHeaders, getJsonHeaders, getJsonHeadersWithOpenAiKey, sanitizeHeaders } from './api-headers';
 export { ApiError, apiDelete, apiFetch, apiFetchWithParams, apiPost } from './api-fetch';
+export {
+	buildGlobalOpenAiConnectionFromConfig,
+	getSameOriginOpenAiRoot,
+	isRemoteOpenAiApi,
+	legacyManagedModelsFromProfiles,
+	legacyOpenAiCustomModelsTextFromManaged,
+	normalizeOpenAiApiBaseUrl,
+	openAiConnectionFetchKey,
+	openAiPathFromApiFetchPath,
+	openAiRootsEffectivelyEqual,
+	parseOpenAiCustomModelIds,
+	parseOpenAiManagedModelsFromConfig,
+	parseOpenAiServerProfilesFromConfig,
+	prepareOpenAiFetch,
+	prepareOpenAiFetchResolved,
+	prepareOpenAiFetchSameOrigin,
+	prepareOpenAiFetchWithContext,
+	resolveOpenAiConnectionForProfile,
+	resolveOpenAiHttpUrl,
+	serializeOpenAiManagedModels,
+	serializeOpenAiServerProfiles,
+	shouldProxyOpenAiRequest,
+	shouldProxyOpenAiUrl,
+	type OpenAiConnectionContext,
+	type OpenAiManagedModelEntry,
+	type OpenAiServerProfileStored
+} from './api-target';
 export { withBase } from './base-path';
 export { getServerBase, loadServerConfig, serverUrl, setServerBase } from './server-config';
 export { validateApiKey } from './api-key-validation';

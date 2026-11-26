@@ -18,6 +18,7 @@ import type {
 	ChatMessageTimings,
 	DatabaseMessage
 } from '#lib/types/index.ts';
+import { isRemoteOpenAiApi } from '#lib/utils/api-target.ts';
 import { lastContextBearingMessage } from '#lib/utils/compaction.ts';
 import { SvelteMap } from 'svelte/reactivity';
 
@@ -127,7 +128,7 @@ export class ChatProcessingStore {
 		if (activeState && typeof activeState.contextTotal === 'number' && activeState.contextTotal > 0)
 			return activeState.contextTotal;
 
-		if (serverStore.isRouterMode) {
+		if (serverStore.isRouterMode || isRemoteOpenAiApi()) {
 			const modelContextSize = modelsStore.selectedModelContextSize;
 
 			if (typeof modelContextSize === 'number' && modelContextSize > 0) {

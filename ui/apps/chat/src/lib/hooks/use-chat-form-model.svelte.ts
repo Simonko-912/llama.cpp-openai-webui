@@ -11,10 +11,13 @@
 import { conversationsStore, modelsStore, serverStore } from '#lib/stores/index.ts';
 import type { DatabaseMessage } from '#lib/types/database.js';
 import { getConversationModel } from '#lib/utils/index.ts';
+import { isRemoteOpenAiApi } from '#lib/utils/api-target.ts';
 import { getChatFormModelState } from '#lib/utils/model-selection.ts';
 
 export function useChatFormModel() {
-	const isRouter = $derived(serverStore.isRouterMode);
+	// a remote OpenAI-compatible endpoint gives the form a model list to pick from,
+	// even when the local llama.cpp server itself is not a router
+	const isRouter = $derived(serverStore.isRouterMode || isRemoteOpenAiApi());
 	const conversationModel = $derived(
 		getConversationModel(conversationsStore.activeMessages as DatabaseMessage[])
 	);
@@ -35,7 +38,8 @@ export function useChatFormModel() {
 
 			lastSyncedConversationModel = conversationModel;
 		} else if (
-			isRouter &&
+			serverStore.isRouterMode &&
+			!isRemoteOpenAiApi() &&
 			!modelsStore.selectedModelId &&
 			conversationsStore.activeMessages.length > 0 &&
 			!conversationModel
@@ -49,6 +53,10 @@ export function useChatFormModel() {
 				visible.find((m) => modelsStore.loadedModelIds.includes(m.model));
 
 			if (first) modelsStore.selectModelById(first.id);
+		} else if (isRemoteOpenAiApi() && !modelsStore.selectedModelId && !conversationModel) {
+			// on a remote endpoint there is no load state to wait for: first option wins
+			const first = modelsStore.getVisibleModels()[0];
+			if (first) void modelsStore.selectModelById(first.id);
 		}
 	});
 
