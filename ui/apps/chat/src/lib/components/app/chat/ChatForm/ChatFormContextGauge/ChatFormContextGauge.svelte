@@ -8,6 +8,7 @@
 	import GlassKey from '#lib/components/app/actions/GlassKey.svelte';
 	import { useContextGauge } from '#lib/hooks/use-context-gauge.svelte.ts';
 	import { chatStore, conversationsStore, deviceStore } from '#lib/stores/index.ts';
+	import { formatParameters } from '#lib/utils/formatters.ts';
 	import { untrack } from 'svelte';
 
 	interface Props {
@@ -85,11 +86,20 @@
 			aria-label="Context usage"
 			class={cn(
 				buttonVariants({ variant: 'ghost' }),
-				'size-7 cursor-pointer rounded-full p-0',
+				'h-7 cursor-pointer gap-1.5 rounded-full px-2',
 				className
 			)}
+			title="Tokens of context this conversation is using"
 		>
 			{@render dial('sm')}
+
+			<!-- the numbers the popover carries, kept visible so the usage reads at a glance -->
+			<span class="font-mono text-caption whitespace-nowrap text-muted-foreground">
+				{formatParameters(gauge.contextUsed)}
+				{#if gauge.contextTotal !== null}
+					/ {formatParameters(gauge.contextTotal)}
+				{/if}
+			</span>
 		</Popover.Trigger>
 
 		<!-- bits-ui sets aria-haspopup="dialog" on the trigger but gives the content no role -->
