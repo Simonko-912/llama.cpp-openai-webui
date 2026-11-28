@@ -277,15 +277,17 @@ export class ModelPropsManager {
 	}
 
 	modelSupportsAudio(modelId: string): boolean {
-		return this.getModelModalities(modelId)?.audio ?? false;
+		// a null lookup means "unknown" (remote OpenAI endpoints have no /props
+		// modalities), which should not block uploads; only an explicit false does
+		return this.getModelModalities(modelId)?.audio ?? true;
 	}
 
 	modelSupportsVideo(modelId: string): boolean {
-		return this.getModelModalities(modelId)?.video ?? false;
+		return this.getModelModalities(modelId)?.video ?? true;
 	}
 
 	modelSupportsVision(modelId: string): boolean {
-		return this.getModelModalities(modelId)?.vision ?? false;
+		return this.getModelModalities(modelId)?.vision ?? true;
 	}
 
 	/** The effort as the model's menu offers it, DEFAULT when the menu lacks it. */
