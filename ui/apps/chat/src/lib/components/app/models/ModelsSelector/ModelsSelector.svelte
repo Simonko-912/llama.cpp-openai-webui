@@ -17,7 +17,6 @@
 		SETTINGS_KEYS
 	} from '#lib/constants/index.ts';
 	import { KeyboardKey, ServerModelStatus } from '#lib/enums/index.ts';
-	import { customModelsDialogStore } from '#lib/stores/custom-models-dialog.svelte.ts';
 	import { useChatFormModel } from '#lib/hooks/use-chat-form-model.svelte.ts';
 	import { useModelsSelector } from '#lib/hooks/use-models-selector.svelte.ts';
 	import {
@@ -288,14 +287,6 @@
 		{:else}
 			<span class="text-caption text-muted-foreground">No models yet.</span>
 		{/if}
-
-		<button
-			class="text-caption font-medium text-primary underline-offset-2 hover:underline"
-			type="button"
-			onclick={() => customModelsDialogStore.open()}
-		>
-			Manage API servers...
-		</button>
 	</div>
 {:else if ms.isMultiModel}
 	{#if isMobile}
