@@ -25,10 +25,23 @@ export function getChatFormModelState({
 }: ChatFormModelStateInput): ChatFormModelState {
 	if (!isRouter) return { hasModelSelected: true, isSelectedModelAvailable: true };
 
+	// an empty or failed model list cannot validate anything: the endpoint may still
+	// answer with the selected model, so a selection stays usable instead of locking
+	// the send button red until the next successful fetch
+	if (models.length === 0) {
+		return {
+			hasModelSelected: !!selectedModelId || !!conversationModel,
+			isSelectedModelAvailable: !!selectedModelId || !!conversationModel
+		};
+	}
+
 	if (selectedModelId) {
 		return {
 			hasModelSelected: true,
-			isSelectedModelAvailable: models.some((option) => option.id === selectedModelId)
+			// the id can carry a quant tag while the selection stores the plain name; accept both
+			isSelectedModelAvailable: models.some(
+				(option) => option.id === selectedModelId || option.model === selectedModelId
+			)
 		};
 	}
 

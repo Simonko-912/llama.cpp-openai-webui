@@ -67,4 +67,26 @@ describe('getChatFormModelState', () => {
 			})
 		).toEqual({ hasModelSelected: true, isSelectedModelAvailable: true });
 	});
+
+	it('keeps a selected model usable while the model list is still empty', () => {
+		expect(
+			getChatFormModelState({
+				conversationModel: null,
+				isRouter: true,
+				models: [],
+				selectedModelId: AVAILABLE.id
+			})
+		).toEqual({ hasModelSelected: true, isSelectedModelAvailable: true });
+	});
+
+	it('accepts a selection stored as the plain model name instead of the option id', () => {
+		expect(
+			getChatFormModelState({
+				conversationModel: null,
+				isRouter: true,
+				models: [AVAILABLE],
+				selectedModelId: AVAILABLE.model
+			})
+		).toEqual({ hasModelSelected: true, isSelectedModelAvailable: true });
+	});
 });

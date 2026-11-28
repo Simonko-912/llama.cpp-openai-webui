@@ -212,37 +212,41 @@
 		</ChatMessageContextMenu>
 	{/if}
 
-	{#if displayedModel}
-		<div class={['info my-4 grid gap-4 tabular-nums', hidesStatsUntilHover && 'message-meta']}>
-			<div class="inline-flex flex-wrap items-center gap-2 text-caption text-muted-foreground">
-				<ChatMessageAssistantModel
-					{displayedModel}
-					isLoading={chatStore.isLoading}
-					{isRouter}
-					{onRegenerate}
-				/>
+	{#if displayedModel || message.timestamp}
+		<!-- one compact row: the action icons lead, the model badge and stats sit
+		     right of them so the reply keeps its vertical space -->
+		<div class="flex flex-wrap items-center gap-2 pt-2 text-caption text-muted-foreground tabular-nums">
+			{#if message.timestamp && !editCtx.isEditing}
+				<div class={['flex items-center', !isLastAssistantMessage && 'message-meta']}>
+					<ChatMessageActionIcons
+						actionsPosition="left"
+						justify="end"
+						onContinue={currentConfig.enableContinueGeneration ? onContinue : undefined}
+						onRawOutputToggle={(enabled) => (showRawOutput = enabled)}
+						{onRegenerate}
+						rawOutputEnabled={showRawOutput}
+						showRawOutputSwitch={currentConfig.showRawOutputSwitch}
+					/>
+				</div>
+			{/if}
 
-				<ChatMessageAssistantStatistics
-					isLoading={chatStore.isLoading}
-					{message}
-					{processingState}
-					showMessageStats={currentConfig.showMessageStats}
-				/>
-			</div>
-		</div>
-	{/if}
+			{#if displayedModel}
+				<div class={['flex items-center gap-2', hidesStatsUntilHover && 'message-meta']}>
+					<ChatMessageAssistantModel
+						{displayedModel}
+						isLoading={chatStore.isLoading}
+						{isRouter}
+						{onRegenerate}
+					/>
 
-	{#if message.timestamp && !editCtx.isEditing}
-		<div class={isLastAssistantMessage ? undefined : 'message-meta'}>
-			<ChatMessageActionIcons
-				actionsPosition="left"
-				justify="start"
-				onContinue={currentConfig.enableContinueGeneration ? onContinue : undefined}
-				onRawOutputToggle={(enabled) => (showRawOutput = enabled)}
-				{onRegenerate}
-				rawOutputEnabled={showRawOutput}
-				showRawOutputSwitch={currentConfig.showRawOutputSwitch}
-			/>
+					<ChatMessageAssistantStatistics
+						isLoading={chatStore.isLoading}
+						{message}
+						{processingState}
+						showMessageStats={currentConfig.showMessageStats}
+					/>
+				</div>
+			{/if}
 		</div>
 	{/if}
 </div>
