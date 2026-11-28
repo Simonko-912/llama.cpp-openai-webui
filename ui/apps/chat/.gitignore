@@ -10,6 +10,11 @@ node_modules
 /build
 dev-dist
 dist
+# the embedded chat assets are shipped tracked: scripts/ui-assets.cmake priority-1
+# reads ui/apps/chat/dist, and without it a fresh clone silently falls back to the
+# upstream HF bucket bundle, which has no OpenAI-compatible server support
+!/dist/
+!/dist/**
 
 # OS
 .DS_Store
