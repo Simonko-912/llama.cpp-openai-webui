@@ -214,7 +214,7 @@
 
 	{#if displayedModel}
 		<div class={['info my-4 grid gap-4 tabular-nums', hidesStatsUntilHover && 'message-meta']}>
-			<div class="inline-flex flex-wrap items-start gap-2 text-caption text-muted-foreground">
+			<div class="inline-flex flex-wrap items-center gap-2 text-caption text-muted-foreground">
 				<ChatMessageAssistantModel
 					{displayedModel}
 					isLoading={chatStore.isLoading}

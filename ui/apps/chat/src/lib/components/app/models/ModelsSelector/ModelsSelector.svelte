@@ -276,13 +276,15 @@
 		Loading models...
 	</div>
 {:else if ms.options.length === 0 && ms.isMultiModel}
-	<div class="flex max-w-[16rem] flex-col items-end gap-1 text-right">
+	<div class="inline-flex max-w-[min(calc(100cqw-9rem),25rem)] items-center gap-1">
 		{#if displayModel}
+			<!-- the pill names the model behind the reply, so it reads as info, not a dead icon -->
 			<span
-				class="inline-flex items-center gap-1.5 rounded-sm bg-muted-foreground/10 px-1.5 py-1 text-caption text-muted-foreground"
-				style="max-width: min(calc(100cqw - 10rem), 48rem)"
+				class="inline-flex min-w-0 items-center gap-1 rounded-sm bg-muted-foreground/10 px-1.5 py-1 text-caption text-muted-foreground"
 			>
 				<MODEL_ICON class="size-icon-sm shrink-0" />
+
+				<ModelId class="min-w-0 overflow-hidden" hideQuantization modelId={displayModel} />
 			</span>
 		{:else}
 			<span class="text-caption text-muted-foreground">No models yet.</span>
